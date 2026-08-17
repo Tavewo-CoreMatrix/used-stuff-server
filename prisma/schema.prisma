@@ -1,0 +1,199 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AccountRole {
+  BUYER
+  SELLER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum ItemCondition {
+  NEW
+  LIKE_NEW
+  GOOD
+  FAIR
+  POOR
+}
+
+enum ListingStatus {
+  DRAFT
+  ACTIVE
+  RESERVED
+  SOLD
+  ARCHIVED
+}
+
+enum TransactionStatus {
+  PENDING
+  ESCROW_HELD
+  SELLER_DISPATCHED
+  BUYER_VERIFIED
+  PAYOUT_RELEASED
+  DISPUTED
+  CANCELLED
+}
+
+model Account {
+  id               String        @id @default(cuid())
+  email            String        @unique
+  phone            String?       @unique
+  passwordHash     String
+  role             AccountRole   @default(BUYER)
+  status           AccountStatus @default(ACTIVE)
+  // Email verification
+  emailVerified    Boolean       @default(false)
+  otpCode          String?       // bcrypt-hashed OTP
+  otpExpiresAt     DateTime?
+  // Password reset
+  resetToken       String?       // bcrypt-hashed reset token
+  resetTokenExpiresAt DateTime?
+  profile          Profile?
+  bankAccount      BankAccount?
+  pushToken        String?
+  items            Item[]
+  listings         Listing[]
+  purchases        Transaction[] @relation("BuyerTransactions")
+  sales            Transaction[] @relation("SellerTransactions")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([email])
+  @@index([phone])
+}
+
+model Profile {
+  id          String   @id @default(cuid())
+  accountId   String   @unique
+  displayName String
+  avatarUrl   String?
+  city        String?
+  state       String?
+  country     String?  @default("Nigeria")
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([accountId])
+}
+
+model Item {
+  id          String        @id @default(cuid())
+  ownerId     String
+  title       String
+  description String?
+  category    String
+  subcategory String?
+  brand       String?
+  condition   ItemCondition
+  imageUrls   String[]
+  owner       Account       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  listings    Listing[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([ownerId])
+  @@index([category])
+  @@index([subcategory])
+}
+
+model Listing {
+  id                String        @id @default(cuid())
+  sellerId          String
+  itemId            String
+  price             Decimal       @db.Decimal(12, 2)
+  currency          String        @default("NGN")
+  status            ListingStatus @default(DRAFT)
+  locationCity      String?
+  negotiable        Boolean       @default(false)
+  deliveryAvailable Boolean       @default(false)
+  pickupAvailable   Boolean       @default(false)
+  seller            Account       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  item              Item          @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([sellerId])
+  @@index([itemId])
+  @@index([status])
+}
+
+model Transaction {
+  id                     String            @id @default(cuid())
+  orderNumber            String            @unique
+  listingId              String
+  buyerId                String
+  sellerId               String
+  amount                 Decimal           @db.Decimal(12, 2)
+  currency               String            @default("NGN")
+  status                 TransactionStatus @default(PENDING)
+  paymentReference       String?           @unique
+  paymentTransactionHash String?           @unique
+  escrowHeldAt           DateTime?
+  sellerDispatchedAt     DateTime?
+  sellerDispatchReference String?
+  buyerVerifiedAt        DateTime?
+  buyerVerificationNote  String?
+  deliveryAddress        Json?
+  disputeReason          String?
+  disputeOpenedAt        DateTime?
+  cancelledAt            DateTime?
+  payoutReleasedAt       DateTime?
+  payoutTransferCode     String?           @unique
+  payoutSettledAt        DateTime?
+  payoutFailedAt         DateTime?
+  payoutFailureReason    String?
+  inspectionDeadlineAt   DateTime?
+  listing                Listing           @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  buyer                  Account           @relation("BuyerTransactions", fields: [buyerId], references: [id], onDelete: Restrict)
+  seller                 Account           @relation("SellerTransactions", fields: [sellerId], references: [id], onDelete: Restrict)
+  stateHistories         StateHistory[]
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  @@index([listingId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([paymentReference])
+  @@index([paymentTransactionHash])
+  @@index([status])
+  @@index([orderNumber])
+}
+
+model StateHistory {
+  id            String             @id @default(cuid())
+  transactionId String
+  fromStatus    TransactionStatus?
+  toStatus      TransactionStatus
+  reason        String?
+  metadata      Json?
+  transaction   Transaction        @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime           @default(now())
+
+  @@index([transactionId])
+  @@index([toStatus])
+}
+
+model BankAccount {
+  id            String   @id @default(cuid())
+  accountId     String   @unique
+  bankCode      String
+  accountNumber String
+  accountName   String
+  account       Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([accountId])
+}
