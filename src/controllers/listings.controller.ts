@@ -54,7 +54,10 @@ export const createListingHandler: RequestHandler = asyncHandler(async (request,
 });
 
 export const listListingsHandler: RequestHandler = asyncHandler(async (request, response) => {
-  const listings = await listListings(readOptionalStatus(request.query.status));
+  const listings = await listListings({
+    status: readOptionalStatus(request.query.status),
+    sellerId: readOptionalString(request.query.sellerId),
+  });
 
   response.json({ data: listings });
 });

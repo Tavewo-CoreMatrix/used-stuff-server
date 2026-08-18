@@ -36,9 +36,17 @@ export const createListing = async (input: CreateListingInput) => {
   });
 };
 
-export const listListings = async (status?: ListingStatus) => {
+type ListListingsFilters = {
+  status?: ListingStatus;
+  sellerId?: string;
+};
+
+export const listListings = async ({ status, sellerId }: ListListingsFilters) => {
   return prisma.listing.findMany({
-    where: status ? { status } : undefined,
+    where: {
+      ...(status ? { status } : {}),
+      ...(sellerId ? { sellerId } : {}),
+    },
     orderBy: { createdAt: "desc" },
     take: 100,
     include: listingInclude,
