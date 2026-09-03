@@ -1,5 +1,14 @@
 import type { RequestHandler } from "express";
-import { deleteAccount, getCurrentAccount, login, register, verifyOtp, forgotPassword, resetPassword } from "../services/auth.service.js";
+import {
+  deleteAccount,
+  getCurrentAccount,
+  login,
+  register,
+  verifyOtp,
+  verifyCurrentPassword,
+  forgotPassword,
+  resetPassword,
+} from "../services/auth.service.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { HttpError } from "../utils/http-error.js";
 import { readOptionalString, readString } from "../utils/request.js";
@@ -86,6 +95,16 @@ export const meHandler: RequestHandler = asyncHandler(async (request, response) 
   const account = await getCurrentAccount(request.auth.accountId);
 
   response.json({ data: account });
+});
+
+export const verifyPasswordHandler: RequestHandler = asyncHandler(async (request, response) => {
+  if (!request.auth) {
+    throw new HttpError(401, "Authentication required");
+  }
+
+  const result = await verifyCurrentPassword(request.auth.accountId, readString(request.body.password, "password"));
+
+  response.json({ data: result });
 });
 
 export const deleteAccountHandler: RequestHandler = asyncHandler(async (request, response) => {

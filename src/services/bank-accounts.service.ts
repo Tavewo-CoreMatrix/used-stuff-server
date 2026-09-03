@@ -1,6 +1,11 @@
 import { env } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
 import { HttpError } from "../utils/http-error.js";
+import { verifyPassword } from "../utils/password.js";
+
+// Sellers can change an already-saved bank account at most once per this window —
+// protects payout destination from being silently redirected by a hijacked session.
+const BANK_ACCOUNT_CHANGE_COOLDOWN_DAYS = 30;
 
 type PaystackBank = { name: string; code: string; active: boolean };
 
@@ -53,10 +58,18 @@ export const verifyBankAccount = async (accountNumber: string, bankCode: string)
     },
   });
 
-  const body = (await response.json()) as { status: boolean; data?: { account_name: string; account_number: string } };
+  const body = (await response.json()) as {
+    status: boolean;
+    message?: string;
+    data?: { account_name: string; account_number: string };
+  };
 
   if (!response.ok || !body.status || !body.data?.account_name) {
-    throw new HttpError(422, "Could not resolve account. Check the account number and bank.");
+    // The generic client-facing message hides real causes (wrong bank code,
+    // a test-mode key that can't resolve real accounts, Paystack downtime,
+    // etc.) — log Paystack's own message so it's actually debuggable.
+    console.error(`[Paystack] bank/resolve failed (HTTP ${response.status}) for bank_code=${bankCode}:`, body.message || body);
+    throw new HttpError(422, body.message || "Could not resolve account. Check the account number and bank.");
   }
 
   return {
@@ -68,7 +81,42 @@ export const verifyBankAccount = async (accountNumber: string, bankCode: string)
 export const upsertBankAccount = async (
   accountId: string,
   data: { bankCode: string; accountNumber: string; accountName: string },
+  options: { password?: string; skipVerification?: boolean } = {},
 ) => {
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: {
+      passwordHash: true,
+      bankAccount: { select: { updatedAt: true } },
+    },
+  });
+
+  if (!account) {
+    throw new HttpError(404, "Account not found");
+  }
+
+  // Only changes to an EXISTING bank account are rate-limited and require
+  // re-verification — first-time setup has nothing to protect yet.
+  if (account.bankAccount && !options.skipVerification) {
+    const cooldownMs = BANK_ACCOUNT_CHANGE_COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+    const nextAllowedAt = new Date(account.bankAccount.updatedAt.getTime() + cooldownMs);
+
+    if (nextAllowedAt > new Date()) {
+      throw new HttpError(
+        409,
+        `You can only change your bank account once every ${BANK_ACCOUNT_CHANGE_COOLDOWN_DAYS} days. Try again after ${nextAllowedAt.toISOString().slice(0, 10)}.`,
+      );
+    }
+
+    if (!options.password) {
+      throw new HttpError(400, "password is required to change your bank account");
+    }
+
+    if (!(await verifyPassword(options.password, account.passwordHash))) {
+      throw new HttpError(403, "Incorrect password");
+    }
+  }
+
   return prisma.bankAccount.upsert({
     where: { accountId },
     create: { accountId, ...data },

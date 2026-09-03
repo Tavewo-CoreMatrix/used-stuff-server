@@ -116,7 +116,15 @@ export const startTransactionWorker = () => {
           console.warn(`[Worker:transactions] Unknown job: ${job.name}`);
       }
     },
-    { connection: getRedisOptions() },
+    {
+      connection: getRedisOptions(),
+      // See payout.worker.ts. Note this doesn't delay pickup of the latency-
+      // sensitive "confirm-payment" job — a blocking Redis pop wakes
+      // immediately when a job is pushed regardless of its timeout length;
+      // drainDelay only governs how often an *idle* worker re-polls.
+      drainDelay: 15,
+      stalledInterval: 60_000,
+    },
   );
 
   worker.on("failed", (job, err) => {

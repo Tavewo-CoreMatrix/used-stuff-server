@@ -5,6 +5,7 @@ import {
   meHandler,
   registerHandler,
   verifyOtpHandler,
+  verifyPasswordHandler,
   forgotPasswordHandler,
   resetPasswordHandler,
 } from "../controllers/auth.controller.js";
@@ -18,4 +19,5 @@ authRouter.post("/login", loginHandler);
 authRouter.post("/forgot-password", forgotPasswordHandler);
 authRouter.post("/reset-password", resetPasswordHandler);
 authRouter.get("/me", requireAuth, meHandler);
+authRouter.post("/verify-password", requireAuth, verifyPasswordHandler);
 authRouter.delete("/delete", requireAuth, deleteAccountHandler);

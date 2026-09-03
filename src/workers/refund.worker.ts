@@ -16,7 +16,13 @@ export const startRefundWorker = () => {
       await executeRefund(transactionId, paymentReference, amount, currency, reason);
       console.log(`[Worker:refunds] Refund processed for tx ${transactionId}`);
     },
-    { connection: getRedisOptions() },
+    {
+      connection: getRedisOptions(),
+      // See payout.worker.ts — these run on day-scale timers, so BullMQ's
+      // aggressive default polling (5s drain, 30s stalled-check) is overkill.
+      drainDelay: 15,
+      stalledInterval: 60_000,
+    },
   );
 
   worker.on("failed", (job, err) => {

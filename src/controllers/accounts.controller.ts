@@ -58,7 +58,14 @@ export const createAccountHandler: RequestHandler = asyncHandler(async (request,
 });
 
 export const getAccountHandler: RequestHandler = asyncHandler(async (request, response) => {
-  const account = await getAccountById(readRouteParam(request.params.accountId, "accountId"));
+  const auth = requireAuthContext(request);
+  const targetAccountId = readRouteParam(request.params.accountId, "accountId");
+
+  if (auth.role !== AccountRole.ADMIN && auth.accountId !== targetAccountId) {
+    throw new HttpError(403, "You can only view your own account");
+  }
+
+  const account = await getAccountById(targetAccountId);
 
   response.json({ data: account });
 });

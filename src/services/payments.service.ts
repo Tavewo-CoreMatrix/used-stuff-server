@@ -101,6 +101,42 @@ export const processWebhookPayment = async (
 };
 
 /**
+ * Backstop for a genuinely failed charge (declined card, insufficient funds, etc.).
+ * Immediately cancels the still-PENDING transaction and frees the listing, rather
+ * than leaving it RESERVED until the 24h stale-transaction sweep catches it. No-ops
+ * if the transaction already moved past PENDING (e.g. a late/duplicate webhook).
+ */
+export const processWebhookPaymentFailure = async (
+  paymentReference: string,
+  gateway: "paystack" | "flutterwave",
+  reason?: string,
+) => {
+  const transaction = await prisma.transaction.findUnique({
+    where: { paymentReference },
+    select: { id: true, status: true },
+  });
+
+  if (!transaction) {
+    console.warn(`[WEBHOOK] No transaction for reference ${paymentReference}`);
+    return;
+  }
+
+  if (transaction.status !== TransactionStatus.PENDING) {
+    console.warn(`[PAYMENT:webhook] Transaction ${transaction.id} already ${transaction.status} — skipping failure cancel`);
+    return;
+  }
+
+  await systemUpdateTransactionStatus(
+    transaction.id,
+    TransactionStatus.CANCELLED,
+    reason ? `Payment failed via ${gateway}: ${reason}` : `Payment failed via ${gateway}`,
+    { gateway },
+  );
+
+  console.log(`[PAYMENT:webhook] Transaction ${transaction.id} cancelled after failed ${gateway} charge`);
+};
+
+/**
  * Buyer-initiated synchronous confirmation, called right after the mobile Paystack
  * checkout reports success. Verifies the charge with Paystack directly instead of
  * waiting for the async webhook, so the seller isn't stuck seeing "awaiting payment".

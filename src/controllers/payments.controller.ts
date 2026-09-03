@@ -1,6 +1,7 @@
 import type { RequestHandler } from "express";
 import { schedulePaymentConfirmation } from "../queues/index.js";
 import {
+  processWebhookPaymentFailure,
   verifyFlutterwaveSignature,
   verifyPaystackSignature,
 } from "../services/payments.service.js";
@@ -32,6 +33,10 @@ export const paystackWebhookHandler: RequestHandler = asyncHandler(async (reques
       currency: event.data.currency,
       gateway: "paystack",
     });
+  }
+
+  if (event.event === "charge.failed") {
+    await processWebhookPaymentFailure(event.data.reference, "paystack", event.data.gateway_response);
   }
 
   if (event.event === "transfer.success") {
@@ -72,6 +77,10 @@ export const flutterwaveWebhookHandler: RequestHandler = asyncHandler(async (req
       currency: event.data.currency,
       gateway: "flutterwave",
     });
+  }
+
+  if (event.event === "charge.completed" && event.data.status === "failed") {
+    await processWebhookPaymentFailure(event.data.tx_ref, "flutterwave", event.data.processor_response);
   }
 
   // Always return 200 to acknowledge receipt of the webhook

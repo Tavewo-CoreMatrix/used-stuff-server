@@ -196,6 +196,10 @@ export const resetPassword = async (email: string, token: string, newPassword: s
   return { message: "Password has been successfully reset" };
 };
 
+// Statuses where a transaction still has money or a delivery in flight —
+// deleting either party's account mid-transaction would strand the other side.
+const OPEN_TRANSACTION_STATUSES = ["PENDING", "ESCROW_HELD", "SELLER_DISPATCHED", "BUYER_VERIFIED", "DISPUTED"] as const;
+
 export const deleteAccount = async (accountId: string) => {
   const account = await prisma.account.findUnique({
     where: { id: accountId },
@@ -208,6 +212,20 @@ export const deleteAccount = async (accountId: string) => {
 
   if (account.status === "DELETED") {
     return { message: "Account already deleted" };
+  }
+
+  const openTransactionCount = await prisma.transaction.count({
+    where: {
+      OR: [{ buyerId: accountId }, { sellerId: accountId }],
+      status: { in: [...OPEN_TRANSACTION_STATUSES] },
+    },
+  });
+
+  if (openTransactionCount > 0) {
+    throw new HttpError(
+      409,
+      "You have an order in progress. Please wait until it's completed, cancelled, or resolved before deleting your account.",
+    );
   }
 
   await prisma.account.update({
@@ -227,6 +245,22 @@ export const deleteAccount = async (accountId: string) => {
 
 export const getCurrentAccount = async (accountId: string) => {
   return getAccountById(accountId);
+};
+
+// Re-confirms the current password for an already-authenticated session — used
+// before enabling client-side "Quick Verify" (biometric-gated password cache)
+// for sensitive actions like changing a bank account.
+export const verifyCurrentPassword = async (accountId: string, password: string) => {
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { passwordHash: true },
+  });
+
+  if (!account || !(await verifyPassword(password, account.passwordHash))) {
+    throw new HttpError(403, "Incorrect password");
+  }
+
+  return { valid: true };
 };
 
 const authAccountSelect = {
