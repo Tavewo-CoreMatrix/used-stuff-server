@@ -10,7 +10,25 @@ import {
 } from "../services/listings.service.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { HttpError } from "../utils/http-error.js";
-import { readOptionalBoolean, readOptionalString, readPositiveNumber, readRouteParam, readString } from "../utils/request.js";
+import { redactSellerForViewer } from "../utils/public-seller.js";
+import {
+  readOptionalBoolean,
+  readOptionalPositiveInteger,
+  readOptionalString,
+  readPositiveNumber,
+  readRouteParam,
+  readString,
+} from "../utils/request.js";
+
+// Listings are public/no-auth, so `request.auth` may be undefined here —
+// redactSellerForViewer treats an undefined viewer as "not the seller".
+const redactListingSeller = async <T extends { seller: { id: string } }>(
+  listing: T,
+  request: Parameters<RequestHandler>[0],
+): Promise<T> => ({
+  ...listing,
+  seller: (await redactSellerForViewer(listing.seller, request.auth?.accountId, request.auth?.role)) as T["seller"],
+});
 
 const requireAuth = (request: Parameters<RequestHandler>[0]) => {
   if (!request.auth) {
@@ -45,6 +63,7 @@ export const createListingHandler: RequestHandler = asyncHandler(async (request,
     currency: readOptionalString(request.body.currency),
     locationCity: readOptionalString(request.body.locationCity),
     status: readOptionalStatus(request.body.status),
+    quantity: readOptionalPositiveInteger(request.body.quantity),
     negotiable: readOptionalBoolean(request.body.negotiable),
     deliveryAvailable: readOptionalBoolean(request.body.deliveryAvailable),
     pickupAvailable: readOptionalBoolean(request.body.pickupAvailable),
@@ -59,7 +78,8 @@ export const listListingsHandler: RequestHandler = asyncHandler(async (request, 
     sellerId: readOptionalString(request.query.sellerId),
   });
 
-  response.json({ data: listings });
+  const redacted = await Promise.all(listings.map((listing) => redactListingSeller(listing, request)));
+  response.json({ data: redacted });
 });
 
 export const listMyListingsHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -72,7 +92,7 @@ export const listMyListingsHandler: RequestHandler = asyncHandler(async (request
 export const getListingHandler: RequestHandler = asyncHandler(async (request, response) => {
   const listing = await getListingById(readRouteParam(request.params.listingId, "listingId"));
 
-  response.json({ data: listing });
+  response.json({ data: await redactListingSeller(listing, request) });
 });
 
 export const updateListingHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -82,6 +102,7 @@ export const updateListingHandler: RequestHandler = asyncHandler(async (request,
     currency: readOptionalString(request.body.currency),
     locationCity: readOptionalString(request.body.locationCity),
     status: readOptionalStatus(request.body.status),
+    quantity: readOptionalPositiveInteger(request.body.quantity),
     negotiable: readOptionalBoolean(request.body.negotiable),
     deliveryAvailable: readOptionalBoolean(request.body.deliveryAvailable),
     pickupAvailable: readOptionalBoolean(request.body.pickupAvailable),

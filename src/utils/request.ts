@@ -38,6 +38,20 @@ export const readPositiveNumber = (value: unknown, fieldName: string) => {
   return numberValue;
 };
 
+export const readOptionalPositiveInteger = (value: unknown) => {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const numberValue = typeof value === "number" ? value : Number(value);
+
+  if (!Number.isInteger(numberValue) || numberValue <= 0) {
+    throw new HttpError(400, "Expected a positive integer");
+  }
+
+  return numberValue;
+};
+
 export const readOptionalBoolean = (value: unknown) => {
   if (value === undefined || value === null || value === "") {
     return undefined;

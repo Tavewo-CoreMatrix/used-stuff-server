@@ -17,7 +17,14 @@ import {
 import { confirmPaymentSync } from "../services/payments.service.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { HttpError } from "../utils/http-error.js";
-import { readOptionalObject, readOptionalString, readRouteParam, readString } from "../utils/request.js";
+import { redactSellerForViewer } from "../utils/public-seller.js";
+import {
+  readOptionalObject,
+  readOptionalPositiveInteger,
+  readOptionalString,
+  readRouteParam,
+  readString,
+} from "../utils/request.js";
 
 const requireAuth = (request: Parameters<RequestHandler>[0]) => {
   if (!request.auth) {
@@ -26,6 +33,17 @@ const requireAuth = (request: Parameters<RequestHandler>[0]) => {
 
   return request.auth;
 };
+
+// Applied to every transaction response so the buyer never sees the seller's
+// real identity — only the seller themself (or an admin) sees it unredacted.
+// Never applied to `buyer` — sellers still need the real buyer for delivery.
+const redactTransactionSeller = async <T extends { seller: { id: string } }>(
+  transaction: T,
+  auth: { accountId: string; role: AccountRole },
+): Promise<T> => ({
+  ...transaction,
+  seller: (await redactSellerForViewer(transaction.seller, auth.accountId, auth.role)) as T["seller"],
+});
 
 const readTransactionStatus = (value: unknown) => {
   if (typeof value !== "string" || !(value in TransactionStatus)) {
@@ -48,11 +66,12 @@ export const createTransactionHandler: RequestHandler = asyncHandler(async (requ
   const transaction = await createTransaction({
     buyerId: auth.accountId,
     listingId: readString(request.body.listingId, "listingId"),
+    quantity: readOptionalPositiveInteger(request.body.quantity),
     paymentReference,
     deliveryAddress: readOptionalObject(request.body.deliveryAddress, "deliveryAddress"),
   });
 
-  response.status(201).json({ data: transaction });
+  response.status(201).json({ data: await redactTransactionSeller(transaction, auth) });
 });
 
 export const listTransactionsHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -71,7 +90,8 @@ export const listMyTransactionsHandler: RequestHandler = asyncHandler(async (req
   const auth = requireAuth(request);
   const transactions = await listMyTransactions(auth.accountId);
 
-  response.json({ data: transactions });
+  const redacted = await Promise.all(transactions.map((transaction) => redactTransactionSeller(transaction, auth)));
+  response.json({ data: redacted });
 });
 
 export const getTransactionHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -82,7 +102,7 @@ export const getTransactionHandler: RequestHandler = asyncHandler(async (request
     auth.role === AccountRole.ADMIN,
   );
 
-  response.json({ data: transaction });
+  response.json({ data: await redactTransactionSeller(transaction, auth) });
 });
 
 export const updateTransactionStatusHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -97,7 +117,7 @@ export const updateTransactionStatusHandler: RequestHandler = asyncHandler(async
     metadata: metadata && typeof metadata === "object" && !Array.isArray(metadata) ? metadata : undefined,
   });
 
-  response.json({ data: transaction });
+  response.json({ data: await redactTransactionSeller(transaction, auth) });
 });
 
 export const markSellerDispatchedHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -109,7 +129,7 @@ export const markSellerDispatchedHandler: RequestHandler = asyncHandler(async (r
     readOptionalString(request.body.reason),
   );
 
-  response.json({ data: transaction });
+  response.json({ data: await redactTransactionSeller(transaction, auth) });
 });
 
 export const markBuyerVerifiedHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -120,7 +140,7 @@ export const markBuyerVerifiedHandler: RequestHandler = asyncHandler(async (requ
     readOptionalString(request.body.note),
   );
 
-  response.json({ data: transaction });
+  response.json({ data: await redactTransactionSeller(transaction, auth) });
 });
 
 export const confirmPaymentHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -128,7 +148,7 @@ export const confirmPaymentHandler: RequestHandler = asyncHandler(async (request
   await confirmPaymentSync(readRouteParam(request.params.transactionId, "transactionId"), auth.accountId);
   const transaction = await getTransactionById(readRouteParam(request.params.transactionId, "transactionId"), auth.accountId);
 
-  response.json({ data: transaction });
+  response.json({ data: await redactTransactionSeller(transaction, auth) });
 });
 
 export const openDisputeHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -139,7 +159,7 @@ export const openDisputeHandler: RequestHandler = asyncHandler(async (request, r
     readString(request.body.reason, "reason"),
   );
 
-  response.json({ data: transaction });
+  response.json({ data: await redactTransactionSeller(transaction, auth) });
 });
 
 export const cancelTransactionHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -150,7 +170,7 @@ export const cancelTransactionHandler: RequestHandler = asyncHandler(async (requ
     readOptionalString(request.body.reason),
   );
 
-  response.json({ data: transaction });
+  response.json({ data: await redactTransactionSeller(transaction, auth) });
 });
 
 export const releasePayoutHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -161,7 +181,7 @@ export const releasePayoutHandler: RequestHandler = asyncHandler(async (request,
     readOptionalString(request.body.reason),
   );
 
-  response.json({ data: transaction });
+  response.json({ data: await redactTransactionSeller(transaction, auth) });
 });
 
 export const resolveDisputeHandler: RequestHandler = asyncHandler(async (request, response) => {

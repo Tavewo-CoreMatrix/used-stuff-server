@@ -32,9 +32,11 @@ describe("transactions.service", () => {
       transaction: {
         findUnique: vi.fn(),
         update: vi.fn(),
+        count: vi.fn(),
       },
       listing: {
         update: vi.fn(),
+        findUnique: vi.fn(),
       },
     };
 
@@ -133,7 +135,11 @@ describe("transactions.service", () => {
         sellerId: "seller-1",
         listingId: "list-1",
         status: TransactionStatus.BUYER_VERIFIED,
+        quantity: 1,
       });
+      // No stock left and no sibling order still open — this was the last unit.
+      mockTx.listing.findUnique.mockResolvedValue({ quantityAvailable: 0 });
+      mockTx.transaction.count.mockResolvedValue(0);
 
       mockTx.transaction.update.mockResolvedValue({ id: "txn-1", status: TransactionStatus.PAYOUT_RELEASED });
 
@@ -181,6 +187,7 @@ describe("transactions.service", () => {
         sellerId: "seller-1",
         listingId: "list-1",
         status: TransactionStatus.PENDING,
+        quantity: 1,
       });
 
       mockTx.transaction.update.mockResolvedValue({ id: "txn-1", status: TransactionStatus.CANCELLED });
@@ -193,7 +200,7 @@ describe("transactions.service", () => {
 
       expect(mockTx.listing.update).toHaveBeenCalledWith({
         where: { id: "list-1" },
-        data: { status: ListingStatus.ACTIVE },
+        data: { status: ListingStatus.ACTIVE, quantityAvailable: { increment: 1 } },
       });
       expect(mockTx.transaction.update).toHaveBeenCalled();
     });
@@ -280,9 +287,11 @@ describe("transactions.service", () => {
         transaction: {
           findUnique: vi.fn(),
           update: vi.fn(),
+          count: vi.fn(),
         },
         listing: {
           update: vi.fn(),
+          findUnique: vi.fn(),
         },
       };
 
@@ -306,7 +315,10 @@ describe("transactions.service", () => {
           sellerId: "seller-1",
           listingId: "list-1",
           status: TransactionStatus.DISPUTED,
+          quantity: 1,
         });
+        mockTx.listing.findUnique.mockResolvedValue({ quantityAvailable: 0 });
+        mockTx.transaction.count.mockResolvedValue(0);
         mockTx.transaction.update.mockResolvedValue({ id: "txn-1", status: TransactionStatus.PAYOUT_RELEASED });
 
         await resolveDispute("txn-1", "release", "admin-1", "Evidence supports seller");
