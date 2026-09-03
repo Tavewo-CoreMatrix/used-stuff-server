@@ -65,6 +65,11 @@ model Account {
   // account's real identity when it's acting as a seller. Generated lazily
   // on first use, not at signup, so it never leaks who has vs. hasn't sold yet.
   publicAlias      String?
+  // Replaces password re-entry for sensitive in-session actions (e.g.
+  // changing a saved bank account). Set up once (requires the current
+  // password to establish), then used instead of it going forward.
+  securityQuestion     String?
+  securityAnswerHash   String? // hashed via the same scrypt helper as passwordHash
   items            Item[]
   listings         Listing[]
   purchases        Transaction[] @relation("BuyerTransactions")

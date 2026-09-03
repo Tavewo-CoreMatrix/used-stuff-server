@@ -33,17 +33,24 @@ export const getOrCreatePublicAlias = async (accountId: string): Promise<string>
 type SellerLike = { id: string };
 
 /**
- * Returns `seller` unredacted if the viewer IS that seller or is an admin;
- * otherwise strips it down to just `{ id, profile: { displayName: alias } }` —
- * no email, avatar, city, state, country, or bio. One-directional: only ever
- * applied to a `seller` field, never to `buyer`.
+ * Returns `seller` unredacted only for an admin; otherwise strips it down to
+ * just `{ id, profile: { displayName: alias } }` — no email, avatar, city,
+ * state, country, or bio. One-directional: only ever applied to a `seller`
+ * field, never to `buyer`.
+ *
+ * Deliberately redacts even when the viewer IS that seller: these endpoints
+ * (listings, transactions) render the public/marketplace-facing view, so a
+ * seller looking at their own listing should see exactly what a buyer would
+ * see — not a special self-view with their real name. A seller's own real
+ * identity is already available to them via their own account (/auth/me),
+ * never through this embedded field.
  */
 export const redactSellerForViewer = async <T extends SellerLike>(
   seller: T,
-  viewerAccountId: string | undefined,
+  _viewerAccountId: string | undefined,
   viewerRole: AccountRole | undefined,
 ): Promise<T | { id: string; profile: { displayName: string } }> => {
-  if (viewerRole === AccountRole.ADMIN || seller.id === viewerAccountId) {
+  if (viewerRole === AccountRole.ADMIN) {
     return seller;
   }
 

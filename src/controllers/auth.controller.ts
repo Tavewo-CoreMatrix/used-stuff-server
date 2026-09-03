@@ -8,6 +8,9 @@ import {
   verifyCurrentPassword,
   forgotPassword,
   resetPassword,
+  setSecurityQuestion,
+  clearSecurityQuestion,
+  verifySecurityAnswer,
 } from "../services/auth.service.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { HttpError } from "../utils/http-error.js";
@@ -103,6 +106,41 @@ export const verifyPasswordHandler: RequestHandler = asyncHandler(async (request
   }
 
   const result = await verifyCurrentPassword(request.auth.accountId, readString(request.body.password, "password"));
+
+  response.json({ data: result });
+});
+
+export const setSecurityQuestionHandler: RequestHandler = asyncHandler(async (request, response) => {
+  if (!request.auth) {
+    throw new HttpError(401, "Authentication required");
+  }
+
+  const result = await setSecurityQuestion(
+    request.auth.accountId,
+    readString(request.body.password, "password"),
+    readString(request.body.question, "question"),
+    readString(request.body.answer, "answer"),
+  );
+
+  response.json({ data: result });
+});
+
+export const clearSecurityQuestionHandler: RequestHandler = asyncHandler(async (request, response) => {
+  if (!request.auth) {
+    throw new HttpError(401, "Authentication required");
+  }
+
+  const result = await clearSecurityQuestion(request.auth.accountId);
+
+  response.json({ data: result });
+});
+
+export const verifySecurityAnswerHandler: RequestHandler = asyncHandler(async (request, response) => {
+  if (!request.auth) {
+    throw new HttpError(401, "Authentication required");
+  }
+
+  const result = await verifySecurityAnswer(request.auth.accountId, readString(request.body.answer, "answer"));
 
   response.json({ data: result });
 });

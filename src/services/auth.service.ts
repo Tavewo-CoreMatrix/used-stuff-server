@@ -263,6 +263,67 @@ export const verifyCurrentPassword = async (accountId: string, password: string)
   return { valid: true };
 };
 
+// Normalize so "Bola" / "bola " / "BOLA" all match — a security answer isn't
+// a password, users shouldn't get locked out over casing or trailing spaces.
+const normalizeAnswer = (answer: string) => answer.trim().toLowerCase();
+
+// Establishes (or replaces) the security question used instead of the
+// password for sensitive in-session re-verification (e.g. changing a saved
+// bank account). Requires the CURRENT password once, to prove identity
+// before a new verification factor can be created.
+export const setSecurityQuestion = async (
+  accountId: string,
+  currentPassword: string,
+  question: string,
+  answer: string,
+) => {
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { passwordHash: true },
+  });
+
+  if (!account || !(await verifyPassword(currentPassword, account.passwordHash))) {
+    throw new HttpError(403, "Incorrect password");
+  }
+
+  const securityAnswerHash = await hashPassword(normalizeAnswer(answer));
+
+  await prisma.account.update({
+    where: { id: accountId },
+    data: { securityQuestion: question, securityAnswerHash },
+  });
+
+  return { valid: true };
+};
+
+export const clearSecurityQuestion = async (accountId: string) => {
+  await prisma.account.update({
+    where: { id: accountId },
+    data: { securityQuestion: null, securityAnswerHash: null },
+  });
+
+  return { valid: true };
+};
+
+// Replaces verifyCurrentPassword for the bank-account-change re-verification
+// flow — the security answer, not the password, is the thing being checked.
+export const verifySecurityAnswer = async (accountId: string, answer: string) => {
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { securityAnswerHash: true },
+  });
+
+  if (!account?.securityAnswerHash) {
+    throw new HttpError(400, "Set up your security question first.");
+  }
+
+  if (!(await verifyPassword(normalizeAnswer(answer), account.securityAnswerHash))) {
+    throw new HttpError(403, "That answer doesn't match.");
+  }
+
+  return { valid: true };
+};
+
 const authAccountSelect = {
   id: true,
   email: true,
@@ -273,6 +334,7 @@ const authAccountSelect = {
   pushToken: true,
   profile: true,
   bankAccount: true,
+  securityQuestion: true,
   createdAt: true,
   updatedAt: true,
 };

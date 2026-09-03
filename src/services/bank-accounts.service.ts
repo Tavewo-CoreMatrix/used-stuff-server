@@ -3,6 +3,8 @@ import { prisma } from "../db/prisma.js";
 import { HttpError } from "../utils/http-error.js";
 import { verifyPassword } from "../utils/password.js";
 
+const normalizeAnswer = (answer: string) => answer.trim().toLowerCase();
+
 // Sellers can change an already-saved bank account at most once per this window —
 // protects payout destination from being silently redirected by a hijacked session.
 const BANK_ACCOUNT_CHANGE_COOLDOWN_DAYS = 30;
@@ -81,12 +83,12 @@ export const verifyBankAccount = async (accountNumber: string, bankCode: string)
 export const upsertBankAccount = async (
   accountId: string,
   data: { bankCode: string; accountNumber: string; accountName: string },
-  options: { password?: string; skipVerification?: boolean } = {},
+  options: { securityAnswer?: string; skipVerification?: boolean } = {},
 ) => {
   const account = await prisma.account.findUnique({
     where: { id: accountId },
     select: {
-      passwordHash: true,
+      securityAnswerHash: true,
       bankAccount: { select: { updatedAt: true } },
     },
   });
@@ -108,12 +110,16 @@ export const upsertBankAccount = async (
       );
     }
 
-    if (!options.password) {
-      throw new HttpError(400, "password is required to change your bank account");
+    if (!account.securityAnswerHash) {
+      throw new HttpError(400, "Set up your security question in Profile > Security before changing your bank account.");
     }
 
-    if (!(await verifyPassword(options.password, account.passwordHash))) {
-      throw new HttpError(403, "Incorrect password");
+    if (!options.securityAnswer) {
+      throw new HttpError(400, "securityAnswer is required to change your bank account");
+    }
+
+    if (!(await verifyPassword(normalizeAnswer(options.securityAnswer), account.securityAnswerHash))) {
+      throw new HttpError(403, "That answer doesn't match.");
     }
   }
 

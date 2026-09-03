@@ -34,7 +34,7 @@ export const upsertBankAccountHandler: RequestHandler = asyncHandler(async (requ
     throw new HttpError(403, "You can only update your own bank account");
   }
 
-  const { bankCode, accountNumber, password } = request.body;
+  const { bankCode, accountNumber, securityAnswer } = request.body;
   if (!bankCode || !accountNumber) {
     throw new HttpError(400, "bankCode and accountNumber are required");
   }
@@ -44,8 +44,8 @@ export const upsertBankAccountHandler: RequestHandler = asyncHandler(async (requ
   const verified = await verifyBankAccount(String(accountNumber), String(bankCode));
 
   // An admin correcting another user's bank details on their behalf can't supply
-  // that user's password — only self-service changes go through the cooldown +
-  // password re-verification.
+  // that user's security answer — only self-service changes go through the
+  // cooldown + re-verification.
   const isAdminActingOnBehalf = request.auth.role === AccountRole.ADMIN && request.auth.accountId !== targetAccountId;
 
   const bankAccount = await upsertBankAccount(
@@ -56,7 +56,7 @@ export const upsertBankAccountHandler: RequestHandler = asyncHandler(async (requ
       accountName: verified.accountName,
     },
     {
-      password: typeof password === "string" ? password : undefined,
+      securityAnswer: typeof securityAnswer === "string" ? securityAnswer : undefined,
       skipVerification: isAdminActingOnBehalf,
     },
   );

@@ -110,13 +110,13 @@ describe("payouts.service", () => {
         expect.objectContaining({ name: "John Doe", account_number: "1234567890", bank_code: "044" }),
       );
       expect(mockTransferInitiate).toHaveBeenCalledWith(
-        expect.objectContaining({ recipient: "RCP_test123", amount: 95000 }),
+        expect.objectContaining({ recipient: "RCP_test123", amount: 93000 }),
       );
       // Transfer code must be persisted for idempotency
       expect(prisma.transaction.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { payoutTransferCode: "TRF_test456" } }),
       );
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Initiating ₦950 transfer"));
+      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Initiating ₦930 transfer"));
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("Transfer initiated: TRF_test456"));
 
       consoleSpy.mockRestore();

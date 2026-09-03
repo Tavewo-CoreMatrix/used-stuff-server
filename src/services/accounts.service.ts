@@ -125,6 +125,7 @@ const accountSelect = {
   pushToken: true,
   profile: true,
   bankAccount: true,
+  securityQuestion: true,
   createdAt: true,
   updatedAt: true,
 };
