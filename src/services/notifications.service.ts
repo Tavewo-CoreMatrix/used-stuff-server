@@ -95,6 +95,30 @@ export const notifyPayoutSettled = async (transactionId: string): Promise<void> 
   ]);
 };
 
+export const notifyWantedMatch = async (
+  requesterId: string,
+  listingId: string,
+  itemTitle: string,
+  wantedQuery: string,
+): Promise<void> => {
+  const requester = await prisma.account.findUnique({
+    where: { id: requesterId },
+    select: { pushToken: true },
+  });
+
+  if (!requester?.pushToken) return;
+
+  await sendPush([
+    {
+      to: requester.pushToken,
+      sound: "default",
+      title: "We found it! 🔔",
+      body: `"${itemTitle}" just got listed — matches your "${wantedQuery}" search.`,
+      data: { listingId, screen: "product" },
+    },
+  ]);
+};
+
 export const notifyTransactionParties = async (
   transactionId: string,
   toStatus: TransactionStatus,

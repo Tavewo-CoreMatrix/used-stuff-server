@@ -11,6 +11,7 @@ import {
 import { asyncHandler } from "../utils/async-handler.js";
 import { HttpError } from "../utils/http-error.js";
 import { redactSellerForViewer } from "../utils/public-seller.js";
+import { matchWantedRequests } from "../services/wanted-requests.service.js";
 import {
   readOptionalBoolean,
   readOptionalPositiveInteger,
@@ -19,6 +20,19 @@ import {
   readRouteParam,
   readString,
 } from "../utils/request.js";
+
+// Best-effort, never blocks the response: a failure here shouldn't break
+// listing creation, it just means a "Find It" match got missed this time.
+const triggerWantedMatch = (listing: {
+  id: string;
+  status: ListingStatus;
+  item: { title: string; category: string; subcategory?: string | null; brand?: string | null };
+}) => {
+  if (listing.status !== ListingStatus.ACTIVE) return;
+  matchWantedRequests(listing).catch((error) =>
+    console.error(`[WantedRequests] Match check failed for listing ${listing.id}:`, error),
+  );
+};
 
 // Listings are public/no-auth, so `request.auth` may be undefined here —
 // redactSellerForViewer treats an undefined viewer as "not the seller".
@@ -69,6 +83,7 @@ export const createListingHandler: RequestHandler = asyncHandler(async (request,
     pickupAvailable: readOptionalBoolean(request.body.pickupAvailable),
   });
 
+  triggerWantedMatch(listing);
   response.status(201).json({ data: listing });
 });
 
@@ -108,6 +123,7 @@ export const updateListingHandler: RequestHandler = asyncHandler(async (request,
     pickupAvailable: readOptionalBoolean(request.body.pickupAvailable),
   });
 
+  triggerWantedMatch(listing);
   response.json({ data: listing });
 });
 

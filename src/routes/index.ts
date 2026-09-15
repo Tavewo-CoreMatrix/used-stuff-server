@@ -7,6 +7,7 @@ import { listingsRouter } from "./listings.routes.js";
 import { transactionsRouter } from "./transactions.routes.js";
 import { paymentsRouter } from "./payments.routes.js";
 import { verificationRouter } from "./verification.routes.js";
+import { wantedRequestsRouter } from "./wanted-requests.routes.js";
 
 export const apiRouter = Router();
 
@@ -18,3 +19,4 @@ apiRouter.use("/listings", listingsRouter);
 apiRouter.use("/transactions", transactionsRouter);
 apiRouter.use("/payments", paymentsRouter);
 apiRouter.use("/verification", verificationRouter);
+apiRouter.use("/wanted-requests", wantedRequestsRouter);

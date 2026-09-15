@@ -44,6 +44,12 @@ enum TransactionStatus {
   CANCELLED
 }
 
+enum WantedRequestStatus {
+  ACTIVE     // still waiting for a match
+  FULFILLED  // a matching listing was found and the requester was notified
+  CANCELLED  // requester removed it manually
+}
+
 model Account {
   id               String        @id @default(cuid())
   email            String        @unique
@@ -74,6 +80,7 @@ model Account {
   listings         Listing[]
   purchases        Transaction[] @relation("BuyerTransactions")
   sales            Transaction[] @relation("SellerTransactions")
+  wantedRequests   WantedRequest[]
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
@@ -208,4 +215,23 @@ model BankAccount {
   updatedAt     DateTime @updatedAt
 
   @@index([accountId])
+}
+
+// "Find It" — a buyer searches for something with no matching listing, and
+// asks to be notified once a seller posts something that matches.
+model WantedRequest {
+  id               String              @id @default(cuid())
+  requesterId      String
+  requester        Account             @relation(fields: [requesterId], references: [id], onDelete: Cascade)
+  query            String              // raw search text, e.g. "Black Nike Shoe"
+  category         String?             // best-effort inferred, e.g. "Fashion"
+  subcategory      String?             // e.g. "Shoes" — shown to the user as the more specific label
+  status           WantedRequestStatus @default(ACTIVE)
+  matchedListingId String?             // set when a match notifies the requester
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  fulfilledAt      DateTime?
+
+  @@index([requesterId])
+  @@index([status])
 }
