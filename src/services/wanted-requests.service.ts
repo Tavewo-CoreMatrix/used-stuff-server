@@ -1,6 +1,7 @@
 import { WantedRequestStatus } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
 import { HttpError } from "../utils/http-error.js";
+import { fuzzySearchMatch } from "../utils/fuzzy-match.js";
 import { notifyWantedMatch } from "./notifications.service.js";
 
 export const createWantedRequest = async (
@@ -40,25 +41,6 @@ export const cancelWantedRequest = async (id: string, requesterId: string) => {
   });
 };
 
-// Word-level substring match — mirrors the mobile app's own client-side search
-// filter (`.includes(term)` over joined title/category/subcategory/brand), so
-// "would this wanted item have shown up in a live search against this
-// listing?" is the same test used to decide whether to notify.
-const tokenize = (text: string): string[] =>
-  text
-    .toLowerCase()
-    .split(/\s+/)
-    .map((w) => w.trim())
-    .filter((w) => w.length > 2);
-
-const isMatch = (wantedQuery: string, listingSearchText: string): boolean => {
-  const wantedWords = tokenize(wantedQuery);
-  if (wantedWords.length === 0) return false;
-
-  const haystack = listingSearchText.toLowerCase();
-  return wantedWords.every((word) => haystack.includes(word));
-};
-
 /**
  * Called (fire-and-forget) right after a listing becomes ACTIVE. Finds any
  * still-open wanted requests whose search terms all appear in this listing's
@@ -80,7 +62,7 @@ export const matchWantedRequests = async (listing: {
     .filter(Boolean)
     .join(" ");
 
-  const matches = candidates.filter((c) => isMatch(c.query, searchText));
+  const matches = candidates.filter((c) => fuzzySearchMatch(c.query, searchText));
   if (matches.length === 0) return;
 
   await Promise.all(
