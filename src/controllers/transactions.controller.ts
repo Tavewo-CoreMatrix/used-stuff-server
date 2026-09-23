@@ -1,4 +1,5 @@
 import { AccountRole, TransactionStatus } from "@prisma/client";
+import { recordAuditLog } from "../services/audit-log.service.js";
 import type { RequestHandler } from "express";
 import crypto from "node:crypto";
 import {
@@ -15,6 +16,7 @@ import {
   updateTransactionStatus,
 } from "../services/transactions.service.js";
 import { confirmPaymentSync } from "../services/payments.service.js";
+import { pageResult, readPagination } from "../utils/pagination.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { HttpError } from "../utils/http-error.js";
 import { redactSellerForViewer } from "../utils/public-seller.js";
@@ -81,9 +83,20 @@ export const listTransactionsHandler: RequestHandler = asyncHandler(async (reque
     throw new HttpError(403, "Only admins can list all transactions");
   }
 
-  const transactions = await listTransactions();
+  const { limit, offset } = readPagination(request.query);
+  const statuses =
+    typeof request.query.status === "string" && request.query.status
+      ? request.query.status.split(",").map((s) => readTransactionStatus(s.trim()))
+      : undefined;
 
-  response.json({ data: transactions });
+  const transactions = await listTransactions({
+    statuses,
+    hadDispute: request.query.hadDispute === "true",
+    limit,
+    offset,
+  });
+
+  response.json(pageResult(transactions, limit));
 });
 
 export const listMyTransactionsHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -196,12 +209,18 @@ export const resolveDisputeHandler: RequestHandler = asyncHandler(async (request
     throw new HttpError(400, 'resolution must be "release" or "refund"');
   }
 
-  const transaction = await resolveDispute(
-    readRouteParam(request.params.transactionId, "transactionId"),
-    resolution,
-    auth.accountId,
-    readString(request.body.reason, "reason"),
-  );
+  const transactionId = readRouteParam(request.params.transactionId, "transactionId");
+  const reason = readString(request.body.reason, "reason");
+  const transaction = await resolveDispute(transactionId, resolution, auth.accountId, reason);
+
+  await recordAuditLog({
+    adminId: auth.accountId,
+    action: resolution === "release" ? "DISPUTE_RELEASED" : "DISPUTE_REFUNDED",
+    targetType: "TRANSACTION",
+    targetId: transactionId,
+    reason,
+    metadata: { amount: Number(transaction.amount) },
+  });
 
   response.json({ data: transaction });
 });

@@ -3,7 +3,7 @@ import { prisma } from "../db/prisma.js";
 import { getPaystack } from "../lib/paystack.js";
 import { notifyPayoutSettled } from "./notifications.service.js";
 
-const PLATFORM_FEE_RATE = 0.07; // 7% — keep in sync with mobile's PLATFORM_FEE_RATE (My Listings payout estimate)
+export const PLATFORM_FEE_RATE = 0.07; // 7% — keep in sync with mobile's PLATFORM_FEE_RATE (My Listings payout estimate)
 
 // Paystack requires OTP-less transfers: Settings → Preferences → Disable OTP for transfers.
 

@@ -64,7 +64,7 @@ const templates: Partial<
   }),
   DISPUTED: (item) => ({
     buyer: { title: "Dispute opened", body: `Your order for "${item}" is under review.` },
-    seller: { title: "Dispute opened", body: `The buyer has raised an issue with "${item}".` },
+    seller: { title: "Dispute opened", body: `The buyer has raised an issue with "${item}". Open the order to add your side and photos.` },
   }),
   CANCELLED: (item) => ({
     buyer: { title: "Order cancelled", body: `Your order for "${item}" has been cancelled.` },
@@ -150,5 +150,35 @@ export const notifyTransactionParties = async (
     messages.push({ to: transaction.seller.pushToken, sound: "default", data, ...sellerMsg });
   }
 
+  if (toStatus === TransactionStatus.DISPUTED) {
+    const admins = await prisma.account.findMany({
+      where: { role: "ADMIN", status: "ACTIVE", pushToken: { not: null } },
+      select: { pushToken: true },
+    });
+    for (const admin of admins) {
+      messages.push({
+        to: admin.pushToken!,
+        sound: "default",
+        title: "New dispute to review",
+        body: `"${itemTitle}" needs an admin decision.`,
+        data: { transactionId, screen: "admin-dispute" },
+      });
+    }
+  }
+
   await sendPush(messages);
+};
+
+export const notifyListingRemoved = async (accountId: string, itemTitle: string, reason: string): Promise<void> => {
+  const account = await prisma.account.findUnique({ where: { id: accountId }, select: { pushToken: true } });
+  if (!account?.pushToken) return;
+
+  await sendPush([
+    {
+      to: account.pushToken,
+      sound: "default",
+      title: "Listing removed",
+      body: `"${itemTitle}" was removed by our team: ${reason}`,
+    },
+  ]);
 };

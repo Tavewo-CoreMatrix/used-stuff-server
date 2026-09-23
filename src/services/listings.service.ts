@@ -81,6 +81,13 @@ export const getListingById = async (listingId: string) => {
 export const updateListing = async (listingId: string, sellerId: string, input: UpdateListingInput) => {
   const listing = await assertListingSeller(listingId, sellerId);
 
+  if (listing.removedByAdminAt) {
+    throw new HttpError(
+      403,
+      `This listing was removed by an admin${listing.removalReason ? `: ${listing.removalReason}` : ""}`,
+    );
+  }
+
   const data: Record<string, unknown> = {
     price: input.price,
     currency: input.currency,
@@ -141,7 +148,7 @@ export const deleteListing = async (listingId: string, sellerId: string) => {
 const assertListingSeller = async (listingId: string, sellerId: string) => {
   const listing = await prisma.listing.findUnique({
     where: { id: listingId },
-    select: { sellerId: true, status: true, quantity: true, quantityAvailable: true },
+    select: { sellerId: true, status: true, quantity: true, quantityAvailable: true, removedByAdminAt: true, removalReason: true },
   });
 
   if (!listing) {

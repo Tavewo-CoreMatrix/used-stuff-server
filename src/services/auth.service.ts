@@ -120,6 +120,7 @@ export const login = async (input: LoginInput) => {
       ...authAccountSelect,
       passwordHash: true,
       status: true,
+      suspensionReason: true,
       emailVerified: true,
     },
   });
@@ -133,14 +134,19 @@ export const login = async (input: LoginInput) => {
   }
 
   if (account.status === "SUSPENDED") {
-    throw new HttpError(403, "Account is suspended");
+    throw new HttpError(
+      403,
+      account.suspensionReason
+        ? `Your account has been suspended: ${account.suspensionReason}`
+        : "Your account has been suspended",
+    );
   }
 
   if (account.status === "DELETED") {
     throw new HttpError(403, "Account has been deleted");
   }
 
-  const { passwordHash: _passwordHash, ...safeAccount } = account;
+  const { passwordHash: _passwordHash, suspensionReason: _suspensionReason, ...safeAccount } = account;
 
   return {
     account: safeAccount,

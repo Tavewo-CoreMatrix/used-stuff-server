@@ -1,4 +1,5 @@
 import { AccountRole, AccountStatus } from "@prisma/client";
+import { pageResult, readPagination } from "../utils/pagination.js";
 import type { RequestHandler } from "express";
 import { createAccount, getAccountById, listAccounts, updateAccountStatus } from "../services/accounts.service.js";
 import { asyncHandler } from "../utils/async-handler.js";
@@ -71,13 +72,16 @@ export const getAccountHandler: RequestHandler = asyncHandler(async (request, re
 });
 
 export const listAccountsHandler: RequestHandler = asyncHandler(async (request, response) => {
+  const { limit, offset } = readPagination(request.query);
   const accounts = await listAccounts({
     status: readOptionalStatus(request.query.status),
     role: readRole(request.query.role),
     search: readOptionalString(request.query.search),
+    limit,
+    offset,
   });
 
-  response.json({ data: accounts });
+  response.json(pageResult(accounts, limit));
 });
 
 export const updateAccountStatusHandler: RequestHandler = asyncHandler(async (request, response) => {
@@ -89,6 +93,7 @@ export const updateAccountStatusHandler: RequestHandler = asyncHandler(async (re
     throw new HttpError(400, "status is required");
   }
 
-  const account = await updateAccountStatus(targetAccountId, newStatus, auth.accountId);
+  const reason = typeof request.body.reason === "string" ? request.body.reason : undefined;
+  const account = await updateAccountStatus(targetAccountId, newStatus, auth.accountId, reason);
   response.json({ data: account });
 });

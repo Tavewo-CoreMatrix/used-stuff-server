@@ -13,6 +13,7 @@ import {
   resolveDisputeHandler,
   updateTransactionStatusHandler,
 } from "../controllers/transactions.controller.js";
+import { addEvidenceHandler, listEvidenceHandler } from "../controllers/dispute-evidence.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
 
 export const transactionsRouter = Router();
@@ -27,6 +28,8 @@ transactionsRouter.patch("/:transactionId/status", updateTransactionStatusHandle
 transactionsRouter.post("/:transactionId/dispatch", markSellerDispatchedHandler);
 transactionsRouter.post("/:transactionId/verify-delivery", markBuyerVerifiedHandler);
 transactionsRouter.post("/:transactionId/dispute", openDisputeHandler);
+transactionsRouter.get("/:transactionId/evidence", listEvidenceHandler);
+transactionsRouter.post("/:transactionId/evidence", addEvidenceHandler);
 transactionsRouter.post("/:transactionId/cancel", cancelTransactionHandler);
 transactionsRouter.post("/:transactionId/release-payout", releasePayoutHandler);
 transactionsRouter.post("/:transactionId/resolve-dispute", resolveDisputeHandler);

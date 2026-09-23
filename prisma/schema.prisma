@@ -76,6 +76,9 @@ model Account {
   // password to establish), then used instead of it going forward.
   securityQuestion     String?
   securityAnswerHash   String? // hashed via the same scrypt helper as passwordHash
+  // Set when an admin suspends the account; cleared on reinstatement.
+  suspensionReason     String?
+  suspendedAt          DateTime?
   items            Item[]
   listings         Listing[]
   purchases        Transaction[] @relation("BuyerTransactions")
@@ -136,6 +139,9 @@ model Listing {
   negotiable        Boolean       @default(false)
   deliveryAvailable Boolean       @default(false)
   pickupAvailable   Boolean       @default(false)
+  // Set when an admin takes the listing down; blocks the seller (and order cancellations) from reactivating it.
+  removedByAdminAt  DateTime?
+  removalReason     String?
   seller            Account       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   item              Item          @relation(fields: [itemId], references: [id], onDelete: Cascade)
   transactions      Transaction[]
@@ -178,6 +184,7 @@ model Transaction {
   buyer                  Account           @relation("BuyerTransactions", fields: [buyerId], references: [id], onDelete: Restrict)
   seller                 Account           @relation("SellerTransactions", fields: [sellerId], references: [id], onDelete: Restrict)
   stateHistories         StateHistory[]
+  disputeEvidence        DisputeEvidence[]
   createdAt              DateTime          @default(now())
   updatedAt              DateTime          @updatedAt
 
@@ -234,4 +241,36 @@ model WantedRequest {
 
   @@index([requesterId])
   @@index([status])
+}
+
+// Append-only record of admin actions (suspensions, dispute rulings, ...).
+// adminEmail is a snapshot so the trail stays readable if an admin account changes.
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  adminId    String
+  adminEmail String
+  action     String   // e.g. ACCOUNT_SUSPENDED, ACCOUNT_REINSTATED, DISPUTE_RELEASED, DISPUTE_REFUNDED
+  targetType String   // "ACCOUNT" | "TRANSACTION"
+  targetId   String
+  reason     String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([targetType, targetId])
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+// Photos and notes the buyer or seller attach to an open dispute for the admin to review.
+model DisputeEvidence {
+  id            String      @id @default(cuid())
+  transactionId String
+  submittedById String
+  submitterRole String      // "BUYER" | "SELLER"
+  note          String      @default("")
+  imageUrls     String[]
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+
+  @@index([transactionId])
 }

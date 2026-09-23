@@ -1,4 +1,4 @@
-import { Paystack } from "@paystack/paystack-sdk";
+import { getPaystack } from "../lib/paystack.js";
 import { TransactionStatus } from "@prisma/client";
 import { env } from "../config/env.js";
 import { prisma } from "../db/prisma.js";
@@ -118,8 +118,7 @@ export const executeRefund = async (
     throw new Error(`Transaction ${transactionId} not found`);
   }
 
-  if (!env.paystackSecretKey) throw new Error("Paystack secret key not configured");
-  const paystack = new Paystack(env.paystackSecretKey);
+  const paystack = getPaystack();
 
   try {
     const response = await paystack.refund.create({

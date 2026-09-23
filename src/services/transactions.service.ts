@@ -115,10 +115,23 @@ export const createTransaction = async (input: CreateTransactionInput) => {
   });
 };
 
-export const listTransactions = async () => {
+type ListTransactionsFilter = {
+  statuses?: TransactionStatus[];
+  hadDispute?: boolean;
+  limit?: number;
+  offset?: number;
+};
+
+// Admin list. Returns up to limit + 1 rows so the caller can tell whether another page exists.
+export const listTransactions = async (filter: ListTransactionsFilter = {}) => {
   return prisma.transaction.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 100,
+    where: {
+      ...(filter.statuses?.length ? { status: { in: filter.statuses } } : {}),
+      ...(filter.hadDispute ? { disputeOpenedAt: { not: null } } : {}),
+    },
+    orderBy: filter.hadDispute ? { disputeOpenedAt: "desc" } : { createdAt: "desc" },
+    skip: filter.offset ?? 0,
+    take: (filter.limit ?? 20) + 1,
     include: transactionInclude,
   });
 };
@@ -363,10 +376,15 @@ const applyTransactionStatusUpdate = async (
   } else if (toStatus === TransactionStatus.CANCELLED) {
     // Give the unit(s) this transaction had claimed back to the pool and
     // reopen the listing for purchase.
+    const current = await tx.listing.findUnique({
+      where: { id: transaction.listingId },
+      select: { removedByAdminAt: true },
+    });
+    // An admin-removed listing gets its stock back but must stay off the marketplace.
     await tx.listing.update({
       where: { id: transaction.listingId },
       data: {
-        status: ListingStatus.ACTIVE,
+        ...(current?.removedByAdminAt ? {} : { status: ListingStatus.ACTIVE }),
         quantityAvailable: { increment: transaction.quantity },
       },
     });

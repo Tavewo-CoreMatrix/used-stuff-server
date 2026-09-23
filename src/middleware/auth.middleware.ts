@@ -22,7 +22,7 @@ export const requireAuth: RequestHandler = async (request, _response, next) => {
   // account's token must not grant access even before it expires.
   const account = await prisma.account.findUnique({
     where: { id: payload.accountId },
-    select: { status: true },
+    select: { status: true, suspensionReason: true },
   });
 
   if (!account) {
@@ -30,7 +30,14 @@ export const requireAuth: RequestHandler = async (request, _response, next) => {
   }
 
   if (account.status === AccountStatus.SUSPENDED) {
-    return next(new HttpError(403, "Account is suspended"));
+    return next(
+      new HttpError(
+        403,
+        account.suspensionReason
+          ? `Your account has been suspended: ${account.suspensionReason}`
+          : "Your account has been suspended",
+      ),
+    );
   }
 
   if (account.status === AccountStatus.DELETED) {

@@ -1,6 +1,7 @@
 import { AccountRole, AccountStatus } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
 import { HttpError } from "../utils/http-error.js";
+import { recordAuditLog } from "./audit-log.service.js";
 
 type CreateAccountInput = {
   email: string;
@@ -60,8 +61,11 @@ type ListAccountsFilter = {
   status?: AccountStatus;
   role?: AccountRole;
   search?: string;
+  limit?: number;
+  offset?: number;
 };
 
+// Returns up to limit + 1 rows so the caller can tell whether another page exists.
 export const listAccounts = async (filter: ListAccountsFilter = {}) => {
   return prisma.account.findMany({
     where: {
@@ -77,7 +81,8 @@ export const listAccounts = async (filter: ListAccountsFilter = {}) => {
         : {}),
     },
     orderBy: { createdAt: "desc" },
-    take: 100,
+    skip: filter.offset ?? 0,
+    take: (filter.limit ?? 20) + 1,
     select: accountSelect,
   });
 };
@@ -86,7 +91,12 @@ export const updateAccountStatus = async (
   targetAccountId: string,
   newStatus: AccountStatus,
   adminAccountId: string,
+  reason?: string,
 ) => {
+  if (newStatus === AccountStatus.SUSPENDED && !reason?.trim()) {
+    throw new HttpError(400, "A reason is required to suspend an account");
+  }
+
   if (targetAccountId === adminAccountId) {
     throw new HttpError(400, "You cannot change your own account status");
   }
@@ -108,11 +118,27 @@ export const updateAccountStatus = async (
     throw new HttpError(409, `Account is already ${newStatus.toLowerCase()}`);
   }
 
-  return prisma.account.update({
+  const suspending = newStatus === AccountStatus.SUSPENDED;
+  const updated = await prisma.account.update({
     where: { id: targetAccountId },
-    data: { status: newStatus },
+    data: {
+      status: newStatus,
+      suspensionReason: suspending ? reason!.trim() : null,
+      suspendedAt: suspending ? new Date() : null,
+    },
     select: accountSelect,
   });
+
+  await recordAuditLog({
+    adminId: adminAccountId,
+    action: suspending ? "ACCOUNT_SUSPENDED" : "ACCOUNT_REINSTATED",
+    targetType: "ACCOUNT",
+    targetId: targetAccountId,
+    reason: reason?.trim() || undefined,
+    metadata: { from: target.status, to: newStatus },
+  });
+
+  return updated;
 };
 
 const accountSelect = {
@@ -126,6 +152,8 @@ const accountSelect = {
   profile: true,
   bankAccount: true,
   securityQuestion: true,
+  suspensionReason: true,
+  suspendedAt: true,
   createdAt: true,
   updatedAt: true,
 };
