@@ -37,7 +37,7 @@ export const getAdminStats = async () => {
       // Paid but not moving: seller hasn't dispatched, or buyer hasn't confirmed, for days.
       prisma.transaction.count({
         where: {
-          status: { in: [TransactionStatus.ESCROW_HELD, TransactionStatus.SELLER_DISPATCHED] },
+          status: { in: [TransactionStatus.ESCROW_HELD, TransactionStatus.SELLER_DISPATCHED, TransactionStatus.BUYER_VERIFIED] },
           updatedAt: { lt: stuckBefore },
         },
       }),

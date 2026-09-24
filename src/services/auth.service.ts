@@ -2,7 +2,9 @@ import { prisma } from "../db/prisma.js";
 import { HttpError } from "../utils/http-error.js";
 import { hashPassword, verifyPassword } from "../utils/password.js";
 import { createAuthToken } from "../utils/token.js";
+import { TransactionStatus } from "@prisma/client";
 import { getAccountById } from "./accounts.service.js";
+import { systemUpdateTransactionStatus } from "./transactions.service.js";
 import { env } from "../config/env.js";
 import { sendOtpEmail, sendPasswordResetEmail } from "../utils/email.js";
 import crypto from "crypto";
@@ -204,6 +206,8 @@ export const resetPassword = async (email: string, token: string, newPassword: s
 
 // Statuses where a transaction still has money or a delivery in flight —
 // deleting either party's account mid-transaction would strand the other side.
+const ABANDONED_CHECKOUT_GRACE_MS = 60 * 60 * 1000;
+
 const OPEN_TRANSACTION_STATUSES = ["PENDING", "ESCROW_HELD", "SELLER_DISPATCHED", "BUYER_VERIFIED", "DISPUTED"] as const;
 
 export const deleteAccount = async (accountId: string) => {
@@ -220,17 +224,45 @@ export const deleteAccount = async (accountId: string) => {
     return { message: "Account already deleted" };
   }
 
-  const openTransactionCount = await prisma.transaction.count({
+  // An unpaid checkout that was simply abandoned holds no money, so it shouldn't
+  // block deletion. Cancel those (giving the stock back) before counting what's left.
+  // The grace period avoids cancelling a checkout whose payment is still confirming.
+  const abandoned = await prisma.transaction.findMany({
+    where: {
+      OR: [{ buyerId: accountId }, { sellerId: accountId }],
+      status: "PENDING",
+      createdAt: { lt: new Date(Date.now() - ABANDONED_CHECKOUT_GRACE_MS) },
+    },
+    select: { id: true },
+  });
+  for (const { id } of abandoned) {
+    try {
+      await systemUpdateTransactionStatus(
+        id,
+        TransactionStatus.CANCELLED,
+        "Unpaid checkout cancelled because an account was being deleted.",
+      );
+    } catch (error) {
+      console.error(`[deleteAccount] Could not cancel abandoned order ${id}:`, error);
+    }
+  }
+
+  const blocking = await prisma.transaction.findMany({
     where: {
       OR: [{ buyerId: accountId }, { sellerId: accountId }],
       status: { in: [...OPEN_TRANSACTION_STATUSES] },
     },
+    select: { orderNumber: true, buyerId: true },
+    take: 5,
   });
 
-  if (openTransactionCount > 0) {
+  if (blocking.length > 0) {
+    const list = blocking
+      .map((t) => `#${t.orderNumber} (${t.buyerId === accountId ? "purchase" : "sale"})`)
+      .join(", ");
     throw new HttpError(
       409,
-      "You have an order in progress. Please wait until it's completed, cancelled, or resolved before deleting your account.",
+      `You still have an order in progress: ${list}. Please wait until it's completed, cancelled, or resolved before deleting your account.`,
     );
   }
 

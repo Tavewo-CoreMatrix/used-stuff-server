@@ -3,7 +3,7 @@ import { prisma } from "../db/prisma.js";
 import { HttpError } from "../utils/http-error.js";
 import { recordAuditLog } from "./audit-log.service.js";
 import { notifyListingRemoved } from "./notifications.service.js";
-import { executeSellerPayout } from "./payouts.service.js";
+import { executeSellerPayout, markPayoutFailed } from "./payouts.service.js";
 import { executeRefund } from "./refunds.service.js";
 import { systemUpdateTransactionStatus } from "./transactions.service.js";
 
@@ -39,7 +39,7 @@ export const getAttentionOrders = async () => {
   const [stuck, failedPayouts] = await Promise.all([
     prisma.transaction.findMany({
       where: {
-        status: { in: [TransactionStatus.ESCROW_HELD, TransactionStatus.SELLER_DISPATCHED] },
+        status: { in: [TransactionStatus.ESCROW_HELD, TransactionStatus.SELLER_DISPATCHED, TransactionStatus.BUYER_VERIFIED] },
         updatedAt: { lt: stuckBefore },
       },
       orderBy: { updatedAt: "asc" },
@@ -90,7 +90,13 @@ export const resolveOrderAsAdmin = async (
       where: { id: tx.id },
       data: { payoutTransferCode: null, payoutFailedAt: null, payoutFailureReason: null },
     });
-    await executeSellerPayout(tx.id);
+    try {
+      await executeSellerPayout(tx.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Payout failed";
+      await markPayoutFailed(tx.id, message);
+      throw new HttpError(502, `Payout failed: ${message}`);
+    }
     await recordAuditLog({
       adminId, action: "PAYOUT_RETRIED", targetType: "TRANSACTION", targetId: tx.id, reason,
     });

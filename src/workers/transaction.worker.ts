@@ -63,18 +63,30 @@ export const startTransactionWorker = () => {
             return;
           }
 
-          if (tx.status !== TransactionStatus.SELLER_DISPATCHED) {
+          if (tx.status !== TransactionStatus.SELLER_DISPATCHED && tx.status !== TransactionStatus.BUYER_VERIFIED) {
             console.log(`[Worker:transactions] expire-inspection: tx ${transactionId} already at ${tx.status} — skipping`);
             return;
           }
 
+          // No dispute was raised within the window, so delivery counts as confirmed
+          // and the seller is paid — matching what the buyer's order screen promises
+          // ("auto-releasing payout"). A retry after a partial run finds BUYER_VERIFIED
+          // and just completes the release.
+          if (tx.status === TransactionStatus.SELLER_DISPATCHED) {
+            await systemUpdateTransactionStatus(
+              transactionId,
+              TransactionStatus.BUYER_VERIFIED,
+              "System: 48-hour inspection window expired — delivery auto-confirmed.",
+              { autoVerified: true },
+            );
+          }
           await systemUpdateTransactionStatus(
             transactionId,
-            TransactionStatus.BUYER_VERIFIED,
-            "System: 48-hour inspection window expired — delivery auto-confirmed.",
-            { autoVerified: true },
+            TransactionStatus.PAYOUT_RELEASED,
+            "System: payout released after the inspection window expired with no dispute.",
+            { autoReleased: true },
           );
-          console.log(`[Worker:transactions] Auto-verified tx ${transactionId}`);
+          console.log(`[Worker:transactions] Auto-verified and released payout for tx ${transactionId}`);
           break;
         }
 

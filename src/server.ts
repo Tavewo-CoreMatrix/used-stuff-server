@@ -4,6 +4,7 @@ import { prisma } from "./db/prisma.js";
 import { startTransactionWorker } from "./workers/transaction.worker.js";
 import { startPayoutWorker } from "./workers/payout.worker.js";
 import { startRefundWorker } from "./workers/refund.worker.js";
+import { startSweeper } from "./workers/sweeper.js";
 
 // Fail fast — better to crash at boot with a clear message than silently
 // misbehave at runtime due to a missing env var.
@@ -18,6 +19,8 @@ const workers = [
   startRefundWorker(),
 ];
 
+const sweeper = startSweeper();
+
 const server = app.listen(env.port, env.host, () => {
   console.log(`used-stuff API listening on http://${env.host}:${env.port}`);
   console.log(`BullBoard dashboard: http://${env.host}:${env.port}/admin/queues`);
@@ -26,6 +29,7 @@ const server = app.listen(env.port, env.host, () => {
 const shutdown = async () => {
   console.log("Shutting down...");
   server.close(async () => {
+    sweeper.close();
     await Promise.all(workers.map((w) => w.close()));
     await prisma.$disconnect();
     process.exit(0);

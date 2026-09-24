@@ -1,7 +1,7 @@
 import { Worker } from "bullmq";
 import { getRedisOptions } from "../queues/redis.js";
 import { ReleasePayoutJobData } from "../queues/index.js";
-import { executeSellerPayout } from "../services/payouts.service.js";
+import { executeSellerPayout, markPayoutFailed } from "../services/payouts.service.js";
 
 export const startPayoutWorker = () => {
   const worker = new Worker(
@@ -28,6 +28,14 @@ export const startPayoutWorker = () => {
 
   worker.on("failed", (job, err) => {
     console.error(`[Worker:payouts] Job "${job?.name}" (${job?.id}) failed — attempt ${job?.attemptsMade}:`, err.message);
+
+    // Out of retries: surface it to admins instead of leaving the seller unpaid silently.
+    if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+      const { transactionId } = job.data as ReleasePayoutJobData;
+      markPayoutFailed(transactionId, err.message).catch((e) =>
+        console.error(`[Worker:payouts] Could not record failure for tx ${transactionId}:`, e),
+      );
+    }
   });
 
   console.log("[Worker:payouts] Started");

@@ -5,6 +5,21 @@ import { notifyPayoutSettled } from "./notifications.service.js";
 
 export const PLATFORM_FEE_RATE = 0.07; // 7% — keep in sync with mobile's PLATFORM_FEE_RATE (My Listings payout estimate)
 
+// When Paystack refuses a request it answers { status: false, message } instead of throwing,
+// so the message is the only clue to why (balance, account not enabled for payouts, ...).
+const paystackReason = (response: unknown): string => {
+  const message = (response as { message?: unknown } | null | undefined)?.message;
+  return typeof message === "string" && message ? `: ${message}` : "";
+};
+
+// Records that a payout gave up, so it shows under Failed payouts in the admin app.
+export const markPayoutFailed = async (transactionId: string, reason: string): Promise<void> => {
+  await prisma.transaction.updateMany({
+    where: { id: transactionId, payoutSettledAt: null },
+    data: { payoutFailedAt: new Date(), payoutFailureReason: reason.slice(0, 500) },
+  });
+};
+
 // Paystack requires OTP-less transfers: Settings → Preferences → Disable OTP for transfers.
 
 const createTransferRecipient = async (
@@ -23,7 +38,7 @@ const createTransferRecipient = async (
   });
 
   const recipientCode = response?.data?.recipient_code;
-  if (!recipientCode) throw new Error("Paystack did not return a recipient_code");
+  if (!recipientCode) throw new Error(`Paystack did not return a recipient_code${paystackReason(response)}`);
   return recipientCode;
 };
 
@@ -43,7 +58,7 @@ const initiateTransfer = async (
   });
 
   const transferCode = response?.data?.transfer_code;
-  if (!transferCode) throw new Error("Paystack did not return a transfer_code");
+  if (!transferCode) throw new Error(`Paystack did not return a transfer_code${paystackReason(response)}`);
   return transferCode;
 };
 
