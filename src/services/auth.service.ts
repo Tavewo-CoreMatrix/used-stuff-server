@@ -5,6 +5,7 @@ import { createAuthToken } from "../utils/token.js";
 import { TransactionStatus } from "@prisma/client";
 import { getAccountById } from "./accounts.service.js";
 import { systemUpdateTransactionStatus } from "./transactions.service.js";
+import { eraseAccount } from "./account-deletion.service.js";
 import { env } from "../config/env.js";
 import { sendOtpEmail, sendPasswordResetEmail } from "../utils/email.js";
 import crypto from "crypto";
@@ -266,17 +267,8 @@ export const deleteAccount = async (accountId: string) => {
     );
   }
 
-  await prisma.account.update({
-    where: { id: accountId },
-    data: {
-      status: "DELETED",
-      emailVerified: false,
-      otpCode: null,
-      otpExpiresAt: null,
-      resetToken: null,
-      resetTokenExpiresAt: null,
-    },
-  });
+  // Actually removes the personal data (see eraseAccount) rather than just flagging it.
+  await eraseAccount(accountId);
 
   return { message: "Account deleted successfully" };
 };
