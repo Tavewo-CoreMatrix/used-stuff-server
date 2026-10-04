@@ -34,35 +34,88 @@ By default, the API binds to `0.0.0.0:4000`, which makes it reachable from mobil
 
 ## Current Endpoints
 
+_Last reconciled against `src/routes/` on 4 October 2026 — this list previously lagged the actual implementation by several sprints (missing admin, verification, wanted-requests, bank-accounts, push-tokens, payments webhooks, dispute-evidence, and upload, plus several auth and transaction routes). Regenerate this section from the router files rather than hand-editing it when routes change._
+
+**Health**
 - `GET /api/v1/health`
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/login`
-- `GET /api/v1/auth/me`
-- `GET /api/v1/accounts`
-- `POST /api/v1/accounts`
-- `GET /api/v1/accounts/:accountId`
-- `PUT /api/v1/accounts/:accountId/profile`
-- `GET /api/v1/items`
-- `GET /api/v1/items/mine`
-- `POST /api/v1/items`
-- `GET /api/v1/items/:itemId`
-- `PATCH /api/v1/items/:itemId`
-- `DELETE /api/v1/items/:itemId`
-- `GET /api/v1/listings`
-- `GET /api/v1/listings/mine`
-- `POST /api/v1/listings`
-- `GET /api/v1/listings/:listingId`
-- `PATCH /api/v1/listings/:listingId`
-- `DELETE /api/v1/listings/:listingId`
-- `GET /api/v1/transactions/mine`
-- `POST /api/v1/transactions`
-- `GET /api/v1/transactions/:transactionId`
-- `PATCH /api/v1/transactions/:transactionId/status`
-- `POST /api/v1/transactions/:transactionId/dispatch`
-- `POST /api/v1/transactions/:transactionId/verify-delivery`
-- `POST /api/v1/transactions/:transactionId/dispute`
-- `POST /api/v1/transactions/:transactionId/cancel`
-- `POST /api/v1/transactions/:transactionId/release-payout`
+
+**Auth** (`/api/v1/auth`)
+- `POST /auth/register`
+- `POST /auth/verify-otp`
+- `POST /auth/login`
+- `POST /auth/forgot-password`
+- `POST /auth/reset-password`
+- `GET /auth/me` _(auth required)_
+- `POST /auth/verify-password` _(auth required)_
+- `POST /auth/security-question` _(auth required)_
+- `DELETE /auth/security-question` _(auth required)_
+- `POST /auth/verify-security-answer` _(auth required)_
+- `DELETE /auth/delete` _(auth required)_
+
+**Admin** (`/api/v1/admin` — all routes require an `ADMIN` account)
+- `GET /admin/stats`
+- `GET /admin/audit-log`
+- `GET /admin/attention`
+- `POST /admin/orders/:transactionId/resolve`
+- `GET /admin/listings`
+- `POST /admin/listings/:listingId/remove`
+- `POST /admin/listings/:listingId/restore`
+
+**Accounts** (`/api/v1/accounts` — all routes require authentication)
+- `GET /accounts` _(admin)_
+- `POST /accounts` _(admin)_
+- `GET /accounts/banks`
+- `GET /accounts/:accountId`
+- `PUT /accounts/:accountId/profile`
+- `GET /accounts/:accountId/bank-account/verify`
+- `PUT /accounts/:accountId/bank-account`
+- `PUT /accounts/:accountId/push-token`
+- `PATCH /accounts/:accountId/status` _(admin)_
+
+**Items** (`/api/v1/items`)
+- `GET /items`
+- `GET /items/mine` _(auth required)_
+- `POST /items/upload-image` _(auth required)_
+- `POST /items` _(auth required)_
+- `GET /items/:itemId`
+- `PATCH /items/:itemId` _(auth required)_
+- `DELETE /items/:itemId` _(auth required)_
+
+**Listings** (`/api/v1/listings`)
+- `GET /listings`
+- `GET /listings/mine` _(auth required)_
+- `POST /listings` _(auth required)_
+- `GET /listings/:listingId`
+- `PATCH /listings/:listingId` _(auth required)_
+- `DELETE /listings/:listingId` _(auth required)_
+
+**Transactions** (`/api/v1/transactions` — all routes require authentication)
+- `GET /transactions`
+- `GET /transactions/mine`
+- `POST /transactions`
+- `GET /transactions/:transactionId`
+- `PATCH /transactions/:transactionId/status`
+- `POST /transactions/:transactionId/dispatch`
+- `POST /transactions/:transactionId/verify-delivery`
+- `POST /transactions/:transactionId/dispute`
+- `GET /transactions/:transactionId/evidence`
+- `POST /transactions/:transactionId/evidence`
+- `POST /transactions/:transactionId/cancel`
+- `POST /transactions/:transactionId/release-payout`
+- `POST /transactions/:transactionId/resolve-dispute`
+- `POST /transactions/:transactionId/confirm-payment`
+
+**Payments** (`/api/v1/payments` — public webhook endpoints, secured via gateway signature verification inside the controller, not auth middleware)
+- `POST /payments/webhook/paystack`
+- `POST /payments/webhook/flutterwave`
+
+**Verification** (`/api/v1/verification`)
+- `POST /verification/verify-tag` _(auth required)_ — AI verification of equipment tags.
+
+**Wanted Requests** (`/api/v1/wanted-requests` — all routes require authentication)
+- `POST /wanted-requests`
+- `GET /wanted-requests/mine`
+- `DELETE /wanted-requests/:id`
 
 ## Authentication Flow
 
@@ -179,10 +232,13 @@ Allowed escrow transitions:
 - `BUYER_VERIFIED → PAYOUT_RELEASED`
 - `BUYER_VERIFIED → DISPUTED`
 
-Sprint 10 order actions:
+Order actions:
 
 - Seller dispatches: `POST /api/v1/transactions/:transactionId/dispatch`
 - Buyer verifies delivery: `POST /api/v1/transactions/:transactionId/verify-delivery`
 - Buyer or seller opens dispute: `POST /api/v1/transactions/:transactionId/dispute`
+- Buyer or seller adds dispute evidence: `POST /api/v1/transactions/:transactionId/evidence`
 - Buyer or seller cancels while allowed: `POST /api/v1/transactions/:transactionId/cancel`
 - Buyer releases payout after verification: `POST /api/v1/transactions/:transactionId/release-payout`
+- Admin resolves an open dispute: `POST /api/v1/transactions/:transactionId/resolve-dispute`
+- Payment confirmation sync, best-effort alongside the webhook: `POST /api/v1/transactions/:transactionId/confirm-payment`

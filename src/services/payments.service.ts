@@ -45,7 +45,13 @@ export const verifyPaystackSignature = (rawBody: Buffer, signature: string): boo
 
 export const verifyFlutterwaveSignature = (signature: string): boolean => {
   if (!env.flutterwaveSecretHash) throw new HttpError(500, "Flutterwave secret hash is not configured");
-  return signature === env.flutterwaveSecretHash;
+
+  // Timing-safe, matching the Paystack check above — a plain === here would
+  // leak how many leading characters matched via response-time differences.
+  const expected = Buffer.from(env.flutterwaveSecretHash);
+  const actual = Buffer.from(signature);
+  if (expected.length !== actual.length) return false;
+  return crypto.timingSafeEqual(expected, actual);
 };
 
 /**
