@@ -5,7 +5,7 @@ Express + Prisma backend for the used-stuff marketplace.
 ## First Run
 
 1. Copy `.env.example` to `.env`.
-2. Add your Neon `DATABASE_URL` to `.env`.
+2. Add your Supabase PostgreSQL `DATABASE_URL` to `.env`.
 3. Run `npm install` if dependencies are not fully installed.
 4. Run `npm run prisma:generate`.
 5. Run `npm run prisma:migrate -- --name init`.

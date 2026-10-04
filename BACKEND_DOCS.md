@@ -24,7 +24,7 @@
 
 ## 1. Overview
 
-Used-Stuff is a peer-to-peer second-hand goods marketplace. The backend is an Express 5 + TypeScript API backed by a PostgreSQL database (Neon), a Redis-powered job queue (BullMQ), Paystack for payment processing and bank transfers, and Cloudinary for image hosting.
+Used-Stuff is a peer-to-peer second-hand goods marketplace. The backend is an Express 5 + TypeScript API backed by a PostgreSQL database (Supabase), a Redis-powered job queue (BullMQ), Paystack for payment processing and bank transfers, and Cloudinary for image hosting.
 
 **Core flows:**
 - Sellers list items → Buyers purchase via Paystack → Funds are held in escrow → Seller dispatches → Buyer confirms receipt → Funds are released to seller's bank account minus a 5% platform fee.
@@ -63,7 +63,7 @@ All routes are mounted under `/api/v1`.
 ### Prerequisites
 
 - Node.js 20+
-- PostgreSQL (Neon recommended)
+- PostgreSQL (Supabase)
 - Redis (local or upstash)
 
 ### Install & run
@@ -93,7 +93,7 @@ bun run start               # node dist/server.js
 | `NODE_ENV` | No | `development` | Controls error detail in responses |
 | `PORT` | No | `4000` | HTTP listen port |
 | `HOST` | No | `0.0.0.0` | HTTP listen host |
-| `DATABASE_URL` | Yes | — | Neon/PostgreSQL connection string |
+| `DATABASE_URL` | Yes | — | Supabase PostgreSQL connection string; use the `postgres` database role for the Prisma backend |
 | `AUTH_TOKEN_SECRET` | Yes | — | JWT signing secret |
 | `AUTH_TOKEN_EXPIRES_IN_SECONDS` | No | `604800` | JWT TTL (7 days) |
 | `CORS_ORIGIN` | Yes (prod) | — | Comma-separated allowed origins |
