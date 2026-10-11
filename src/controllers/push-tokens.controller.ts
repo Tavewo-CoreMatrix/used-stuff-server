@@ -19,10 +19,20 @@ export const updatePushTokenHandler: RequestHandler = asyncHandler(async (reques
     throw new HttpError(400, "pushToken must be a string or null");
   }
 
-  await prisma.account.update({
-    where: { id: targetAccountId },
-    data: { pushToken: pushToken ?? null },
-  });
+  // A device token belongs to whoever signed in on it last; detach it from any other
+  // account so that account stops receiving this device's notifications.
+  await prisma.$transaction([
+    ...(pushToken
+      ? [prisma.account.updateMany({
+          where: { pushToken, id: { not: targetAccountId } },
+          data: { pushToken: null },
+        })]
+      : []),
+    prisma.account.update({
+      where: { id: targetAccountId },
+      data: { pushToken: pushToken ?? null },
+    }),
+  ]);
 
   response.json({ data: { ok: true } });
 });

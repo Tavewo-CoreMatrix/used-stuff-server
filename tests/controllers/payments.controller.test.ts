@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import request from "supertest";
 import crypto from "node:crypto";
 import { createApp } from "../../src/app.js";
-import * as paymentsService from "../../src/services/payments.service.js";
+import * as queues from "../../src/queues/index.js";
 
 // Mock env vars for tests
 vi.mock("../../src/config/env.js", () => ({
@@ -10,8 +10,27 @@ vi.mock("../../src/config/env.js", () => ({
     paystackSecretKey: "test_paystack_secret",
     flutterwaveSecretHash: "test_flutterwave_hash",
     corsOrigins: true,
+    redisUrl: "redis://localhost:6379",
+    openaiApiKey: "test_openai_key",
   },
 }));
+
+// Building the app opens the queues and registers them with Bull Board; stub both so the test needs no Redis.
+vi.mock("@bull-board/api", () => ({ createBullBoard: vi.fn() }));
+vi.mock("@bull-board/api/bullMQAdapter", () => ({ BullMQAdapter: vi.fn() }));
+vi.mock("../../src/queues/index.js", () => {
+  return {
+    transactionsQueue: {},
+    payoutsQueue: {},
+    refundsQueue: {},
+    schedulePaymentConfirmation: vi.fn(),
+    schedulePendingExpiry: vi.fn(),
+    scheduleInspectionDeadline: vi.fn(),
+    scheduleEscrowTimeout: vi.fn(),
+    scheduleSellerPayout: vi.fn(),
+    scheduleRefund: vi.fn(),
+  };
+});
 
 // Mock the processWebhookPayment function so we don't actually hit the DB
 vi.mock("../../src/services/payments.service.js", async (importOriginal) => {
@@ -68,7 +87,7 @@ describe("payments.controller integration", () => {
         .send(payload);
 
       expect(response.status).toBe(200);
-      expect(paymentsService.processWebhookPayment).toHaveBeenCalledWith("ref-123", 100, "NGN", "paystack");
+      expect(queues.schedulePaymentConfirmation).toHaveBeenCalledWith({ paymentReference: "ref-123", amount: 100, currency: "NGN", gateway: "paystack" });
     });
   });
 
@@ -107,7 +126,7 @@ describe("payments.controller integration", () => {
         .send(payload);
 
       expect(response.status).toBe(200);
-      expect(paymentsService.processWebhookPayment).toHaveBeenCalledWith("fw-ref-123", 1500, "NGN", "flutterwave");
+      expect(queues.schedulePaymentConfirmation).toHaveBeenCalledWith({ paymentReference: "fw-ref-123", amount: 1500, currency: "NGN", gateway: "flutterwave" });
     });
   });
 });

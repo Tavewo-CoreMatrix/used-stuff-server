@@ -3,8 +3,6 @@ import { prisma } from "../db/prisma.js";
 import { getPaystack } from "../lib/paystack.js";
 import { notifyPayoutSettled } from "./notifications.service.js";
 
-export const PLATFORM_FEE_RATE = 0.07; // 7% — keep in sync with mobile's PLATFORM_FEE_RATE (My Listings payout estimate)
-
 // When Paystack refuses a request it answers { status: false, message } instead of throwing,
 // so the message is the only clue to why (balance, account not enabled for payouts, ...).
 const paystackReason = (response: unknown): string => {
@@ -86,7 +84,7 @@ export const executeSellerPayout = async (transactionId: string): Promise<void> 
   }
 
   const gross = Number(transaction.amount);
-  const payout = gross - gross * PLATFORM_FEE_RATE;
+  const payout = gross - Number(transaction.platformFeeAmount);
   const amountInKobo = Math.round(payout * 100);
 
   console.log(`[PAYOUT] Initiating ₦${payout} transfer to ${bankAccount.accountName} for tx ${transactionId}`);

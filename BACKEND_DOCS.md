@@ -27,7 +27,7 @@
 Used-Stuff is a peer-to-peer second-hand goods marketplace. The backend is an Express 5 + TypeScript API backed by a PostgreSQL database (Supabase), a Redis-powered job queue (BullMQ), Paystack for payment processing and bank transfers, and Cloudinary for image hosting.
 
 **Core flows:**
-- Sellers list items → Buyers purchase via Paystack → Funds are held in escrow → Seller dispatches → Buyer confirms receipt → Funds are released to seller's bank account minus a 5% platform fee.
+- Sellers list items → Buyers purchase via Paystack → Funds are held in escrow → Seller dispatches → Buyer confirms receipt → Funds are released to seller's bank account minus the commission rate snapshotted when the order was created (7% by default).
 - An admin can intervene at any point via the dispute system.
 - All timed automations (payment expiry, inspection deadlines, escrow timeouts) run as background BullMQ jobs.
 
@@ -208,6 +208,8 @@ Central escrow record. Created when a buyer initiates a purchase.
 | `buyerId` | FK → Account | |
 | `sellerId` | FK → Account | |
 | `amount` | Decimal (12, 2) | Locked at purchase time |
+| `platformFeeRate` | Decimal (5, 4) | Commission rate snapshotted at purchase time |
+| `platformFeeAmount` | Decimal (12, 2) | Rounded commission amount used for payout |
 | `currency` | String | |
 | `status` | TransactionStatus | |
 | `paymentReference` | String | Unique. Paystack reference |
@@ -227,6 +229,9 @@ Central escrow record. Created when a buyer initiates a purchase.
 | `payoutSettledAt` | DateTime? | |
 | `payoutFailedAt` | DateTime? | |
 | `payoutFailureReason` | String? | |
+
+#### `PlatformSetting`
+Singleton platform configuration record (`id = "global"`). Stores the commission rate used for new orders.
 
 #### `StateHistory`
 Immutable audit trail. A row is appended on every transaction status change.
@@ -407,6 +412,16 @@ Sends the image to GPT-4o-mini via OpenAI Vision. Returns extracted fields: `bra
 
 `GET /admin/queues` — BullBoard UI (HTTP Basic Auth). Shows all queues, active/waiting/failed/completed jobs, job details.
 
+### Platform settings and admin operations
+
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| GET | `/api/v1/settings/commission` | No | Read the current commission rate as a decimal fraction |
+| PATCH | `/api/v1/admin/commission` | Admin | Set the commission rate (at least 0 and below 1; rounded to four decimal places); new orders only |
+| POST | `/api/v1/admin/broadcast` | Admin | Send a title and body as a push notification to active participants (one per device; recorded in the audit log) |
+
+Commission changes are recorded in the admin audit log. Broadcast responses include Expo-accepted and rejected notification counts; Expo acceptance does not guarantee device delivery.
+
 ---
 
 ## 7. Services
@@ -446,7 +461,7 @@ The most complex service. Owns the escrow state machine.
 - `upsertBankAccount`: creates or updates the `BankAccount` record for an account.
 
 ### `notifications.service.ts`
-Sends Expo push notifications to both parties on every significant transaction state change. Uses `fetch` directly to the Expo Push API. Silently logs failures — a failed notification should never block a transaction transition.
+Sends Expo push notifications to both parties on significant transaction state changes and handles admin platform broadcasts. Transaction notifications are best-effort; large broadcasts are split into Expo-sized batches; a failed batch is counted as rejected, and an error is returned only when nothing could be sent.
 
 ### `ai-verification.service.ts`
 Accepts a solar equipment image (URL or base64), sends it through an AI vision pipeline with a structured extraction prompt, and returns parsed fields: `brand`, `model`, `wattage`, `voltage`, `capacity`, `technology`.

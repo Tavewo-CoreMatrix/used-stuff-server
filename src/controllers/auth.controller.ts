@@ -4,6 +4,7 @@ import {
   getCurrentAccount,
   login,
   register,
+  resendVerificationEmail,
   verifyOtp,
   verifyCurrentPassword,
   forgotPassword,
@@ -71,6 +72,11 @@ export const verifyOtpHandler: RequestHandler = asyncHandler(async (request, res
   const otp = readString(request.body.otp, "otp");
 
   const result = await verifyOtp(email, otp);
+  response.json({ data: result });
+});
+
+export const resendVerificationEmailHandler: RequestHandler = asyncHandler(async (request, response) => {
+  const result = await resendVerificationEmail(readEmail(request.body.email));
   response.json({ data: result });
 });
 

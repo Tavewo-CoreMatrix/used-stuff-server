@@ -4,6 +4,7 @@ import {
   loginHandler,
   meHandler,
   registerHandler,
+  resendVerificationEmailHandler,
   verifyOtpHandler,
   verifyPasswordHandler,
   forgotPasswordHandler,
@@ -18,6 +19,7 @@ export const authRouter = Router();
 
 authRouter.post("/register", registerHandler);
 authRouter.post("/verify-otp", verifyOtpHandler);
+authRouter.post("/resend-verification", resendVerificationEmailHandler);
 authRouter.post("/login", loginHandler);
 authRouter.post("/forgot-password", forgotPasswordHandler);
 authRouter.post("/reset-password", resetPasswordHandler);

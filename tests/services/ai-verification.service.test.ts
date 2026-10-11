@@ -1,52 +1,58 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { extractTextFromImage, preprocessImageForOCR } from "../../src/services/ai-verification.service.js";
 
-// We mock sharp and tesseract.js to avoid actual heavy image processing during tests
-vi.mock("sharp", () => ({
-  default: vi.fn(() => ({
-    grayscale: vi.fn().mockReturnThis(),
-    normalize: vi.fn().mockReturnThis(),
-    sharpen: vi.fn().mockReturnThis(),
-    toBuffer: vi.fn().mockResolvedValue(Buffer.from("processed-image")),
-  })),
+// Mock OpenAI so the tests never send a real (billed) request.
+const { createCompletion } = vi.hoisted(() => ({ createCompletion: vi.fn() }));
+vi.mock("openai", () => ({
+  default: vi.fn(function () {
+    return { chat: { completions: { create: createCompletion } } };
+  }),
 }));
 
-vi.mock("tesseract.js", () => ({
-  default: {
-    recognize: vi.fn().mockResolvedValue({
-      data: {
-        text: "Growatt 1000W Inverter 48V",
-        confidence: 95,
-      },
-    }),
-  },
-}));
+import { extractTextFromImage } from "../../src/services/ai-verification.service.js";
+
+const reply = (content: string) => ({ choices: [{ message: { content } }] });
 
 describe("ai-verification.service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  describe("preprocessImageForOCR", () => {
-    it("returns a processed buffer", async () => {
-      const buffer = Buffer.from("raw-image");
-      const result = await preprocessImageForOCR(buffer);
-      expect(result).toEqual(Buffer.from("processed-image"));
-    });
-  });
-
   describe("extractTextFromImage", () => {
-    it("extracts text and parses keywords correctly", async () => {
-      const buffer = Buffer.from("raw-image");
-      const result = await extractTextFromImage(buffer);
+    it("parses the extracted specs", async () => {
+      createCompletion.mockResolvedValue(reply(JSON.stringify({
+        brand: "Growatt",
+        model: null,
+        wattage: 1000,
+        voltage: 48,
+        capacity: null,
+        technology: "Hybrid Inverter",
+        extractedKeywords: ["growatt", "1000w", "48v"],
+        rawText: "Growatt 1000W Inverter 48V",
+      })));
 
-      expect(result.text).toBe("Growatt 1000W Inverter 48V");
-      expect(result.confidence).toBe(95);
-      
-      // Keywords expected: "Growatt" (brand), "1000W", "48V"
-      expect(result.extractedKeywords).toContain("growatt");
-      expect(result.extractedKeywords).toContain("1000w");
-      expect(result.extractedKeywords).toContain("48v");
+      const result = await extractTextFromImage(Buffer.from("raw-image"));
+
+      expect(result).toEqual({
+        text: "Growatt 1000W Inverter 48V",
+        confidence: 95,
+        extractedKeywords: ["growatt", "1000w", "48v"],
+        brand: "Growatt",
+        model: undefined,
+        wattage: "1000",
+        voltage: "48",
+        capacity: undefined,
+        technology: "Hybrid Inverter",
+      });
+    });
+
+    it("returns the raw reply with zero confidence when it isn't JSON", async () => {
+      createCompletion.mockResolvedValue(reply("I can't read this label."));
+
+      await expect(extractTextFromImage(Buffer.from("raw-image"))).resolves.toEqual({
+        text: "I can't read this label.",
+        confidence: 0,
+        extractedKeywords: [],
+      });
     });
   });
 });

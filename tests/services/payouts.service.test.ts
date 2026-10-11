@@ -93,6 +93,8 @@ describe("payouts.service", () => {
         status: TransactionStatus.PAYOUT_RELEASED,
         payoutTransferCode: null,
         amount: 1000 as any,
+        platformFeeAmount: 70 as any,
+        platformFeeRate: 0.07 as any,
         currency: "NGN",
         sellerId: "seller-1",
         seller: {

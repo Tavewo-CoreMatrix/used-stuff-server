@@ -9,12 +9,13 @@ export type AuditAction =
   | "ORDER_RELEASED"
   | "PAYOUT_RETRIED"
   | "LISTING_REMOVED"
-  | "LISTING_RESTORED";
+  | "LISTING_RESTORED"
+  | "BROADCAST_SENT";
 
 export const recordAuditLog = async (entry: {
   adminId: string;
   action: AuditAction;
-  targetType: "ACCOUNT" | "TRANSACTION" | "LISTING";
+  targetType: "ACCOUNT" | "TRANSACTION" | "LISTING" | "PLATFORM";
   targetId: string;
   reason?: string;
   metadata?: Record<string, unknown>;

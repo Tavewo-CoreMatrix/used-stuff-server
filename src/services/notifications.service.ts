@@ -182,3 +182,79 @@ export const notifyListingRemoved = async (accountId: string, itemTitle: string,
     },
   ]);
 };
+
+export const sendBroadcastNotification = async (
+  title: string,
+  body: string,
+): Promise<{ activeParticipants: number; submitted: number; rejected: number }> => {
+  const participants = await prisma.account.findMany({
+    where: { status: "ACTIVE" },
+    select: { pushToken: true },
+  });
+  // A device used by more than one account can share a token; send it once.
+  const tokens = [
+    ...new Set(
+      participants
+        .map((participant) => participant.pushToken)
+        .filter((token): token is string => !!token && token.startsWith("ExponentPushToken[")),
+    ),
+  ];
+  let submitted = 0;
+  let rejected = 0;
+  let firstError: unknown;
+
+  for (let start = 0; start < tokens.length; start += 100) {
+    const batch = tokens.slice(start, start + 100).map((to) => ({
+      to,
+      sound: "default" as const,
+      title,
+      body,
+    }));
+    try {
+      const response = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "Accept-Encoding": "gzip, deflate",
+        },
+        body: JSON.stringify(batch),
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Expo push API returned ${response.status}: ${await response.text()}`);
+      }
+
+      const payload: unknown = await response.json();
+      if (
+        typeof payload !== "object" ||
+        payload === null ||
+        !("data" in payload) ||
+        !Array.isArray(payload.data) ||
+        payload.data.length !== batch.length
+      ) {
+        throw new Error("Expo push API returned an invalid broadcast response");
+      }
+
+      for (const ticket of payload.data) {
+        if (typeof ticket === "object" && ticket !== null && "status" in ticket && ticket.status === "ok") {
+          submitted += 1;
+        } else {
+          rejected += 1;
+        }
+      }
+    } catch (err) {
+      // Keep going: earlier batches are already delivered, so failing the whole request
+      // would invite a resend that duplicates them. Count this batch as rejected instead.
+      console.error("[Notifications] Broadcast batch failed:", err);
+      firstError ??= err;
+      rejected += batch.length;
+    }
+  }
+
+  // Nothing went out at all, so it's safe (and more useful) to report the failure.
+  if (firstError !== undefined && submitted === 0) throw firstError;
+
+  return { activeParticipants: participants.length, submitted, rejected };
+};

@@ -28,21 +28,70 @@ type LoginInput = {
   password: string;
 };
 
-const generateOtp = () => {
-  return Math.floor(1000 + Math.random() * 9000).toString(); // 4 digits
-};
+const generateOtp = () => crypto.randomInt(1000, 10000).toString();
 
 const generateResetToken = () => {
   return crypto.randomBytes(32).toString("hex");
 };
 
+const VERIFICATION_EMAIL_COOLDOWN_MS = 60_000;
+const VERIFICATION_EMAIL_RESPONSE =
+  "If an account is awaiting verification, a verification email will be sent when eligible.";
+
+const sendVerificationEmail = async (accountId: string, email: string) => {
+  const otp = generateOtp();
+  const hashedOtp = await hashPassword(otp);
+  const now = new Date();
+  const updated = await prisma.account.updateMany({
+    where: {
+      id: accountId,
+      emailVerified: false,
+      OR: [
+        { verificationEmailSentAt: null },
+        { verificationEmailSentAt: { lte: new Date(now.getTime() - VERIFICATION_EMAIL_COOLDOWN_MS) } },
+      ],
+    },
+    data: { verificationEmailSentAt: now },
+  });
+
+  if (updated.count === 0) {
+    return;
+  }
+
+  try {
+    await sendOtpEmail(email, otp);
+  } catch {
+    throw new HttpError(
+      503,
+      "Your account is awaiting verification, but we couldn't send the email. Please try again in about a minute.",
+    );
+  }
+
+  await prisma.account.updateMany({
+    where: { id: accountId, emailVerified: false, verificationEmailSentAt: now },
+    data: {
+      otpCode: hashedOtp,
+      otpExpiresAt: new Date(now.getTime() + env.otpExpiresInMinutes * 60000),
+    },
+  });
+};
+
 export const register = async (input: RegisterInput) => {
   const existingByEmail = await prisma.account.findUnique({
     where: { email: input.email },
-    select: { id: true },
+    select: { id: true, emailVerified: true, passwordHash: true },
   });
   if (existingByEmail) {
-    throw new HttpError(409, "An account with this email already exists. Try signing in instead.");
+    if (existingByEmail.emailVerified) {
+      throw new HttpError(409, "An account with this email already exists. Try signing in instead.");
+    }
+
+    if (!(await verifyPassword(input.password, existingByEmail.passwordHash))) {
+      throw new HttpError(409, "An account with this email is awaiting verification. Use the original password or reset it.");
+    }
+
+    await sendVerificationEmail(existingByEmail.id, input.email);
+    return { message: VERIFICATION_EMAIL_RESPONSE };
   }
 
   if (input.phone) {
@@ -56,7 +105,8 @@ export const register = async (input: RegisterInput) => {
   }
 
   const otp = generateOtp();
-  const otpExpiresAt = new Date(Date.now() + env.otpExpiresInMinutes * 60000);
+  const now = new Date();
+  const otpExpiresAt = new Date(now.getTime() + env.otpExpiresInMinutes * 60000);
   const hashedOtp = await hashPassword(otp);
 
   const account = await prisma.account.create({
@@ -66,6 +116,7 @@ export const register = async (input: RegisterInput) => {
       passwordHash: await hashPassword(input.password),
       otpCode: hashedOtp,
       otpExpiresAt,
+      verificationEmailSentAt: now,
       profile: input.profile
         ? {
             create: input.profile,
@@ -75,9 +126,29 @@ export const register = async (input: RegisterInput) => {
     select: authAccountSelect,
   });
 
-  await sendOtpEmail(account.email, otp);
+  try {
+    await sendOtpEmail(account.email, otp);
+  } catch {
+    throw new HttpError(
+      503,
+      "Your account was created but the verification email could not be sent. Retry registration with the same email and password, or use Resend Code.",
+    );
+  }
 
   return { message: "Account created. Please check your email for the verification code." };
+};
+
+export const resendVerificationEmail = async (email: string) => {
+  const account = await prisma.account.findUnique({
+    where: { email },
+    select: { id: true, emailVerified: true },
+  });
+
+  if (account && !account.emailVerified) {
+    await sendVerificationEmail(account.id, email);
+  }
+
+  return { message: VERIFICATION_EMAIL_RESPONSE };
 };
 
 export const verifyOtp = async (email: string, otp: string) => {

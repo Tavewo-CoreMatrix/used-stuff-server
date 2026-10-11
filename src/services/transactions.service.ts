@@ -81,6 +81,11 @@ export const createTransaction = async (input: CreateTransactionInput) => {
       throw new HttpError(409, "Listing no longer has enough stock available");
     }
 
+    const settings = await tx.platformSetting.findUniqueOrThrow({ where: { id: "global" } });
+    const amount = Number(listing.price) * quantity;
+    const platformFeeRate = Number(settings.commissionRate);
+    const platformFeeAmount = Math.round(amount * platformFeeRate * 100) / 100;
+
     const transaction = await tx.transaction.create({
       data: {
         orderNumber: createOrderNumber(),
@@ -88,7 +93,9 @@ export const createTransaction = async (input: CreateTransactionInput) => {
         buyerId: input.buyerId,
         sellerId: listing.sellerId,
         quantity,
-        amount: Number(listing.price) * quantity,
+        amount,
+        platformFeeRate,
+        platformFeeAmount,
         currency: listing.currency,
         status: TransactionStatus.PENDING,
         paymentReference: input.paymentReference,

@@ -11,11 +11,13 @@ import {
   restoreListingAsAdmin,
   type OrderResolution,
 } from "../services/admin-actions.service.js";
-import { listAuditLogs } from "../services/audit-log.service.js";
+import { listAuditLogs, recordAuditLog } from "../services/audit-log.service.js";
 import { getAdminStats } from "../services/admin-stats.service.js";
 import { pageResult, readPagination } from "../utils/pagination.js";
 import { asyncHandler } from "../utils/async-handler.js";
 import { HttpError } from "../utils/http-error.js";
+import { parseCommissionRate, updatePlatformCommissionRate } from "../services/platform-settings.service.js";
+import { sendBroadcastNotification } from "../services/notifications.service.js";
 
 export const adminRouter = Router();
 
@@ -32,6 +34,39 @@ adminRouter.get(
   "/stats",
   asyncHandler(async (_request, response) => {
     response.json({ data: await getAdminStats() });
+  }),
+);
+
+adminRouter.patch(
+  "/commission",
+  asyncHandler(async (request, response) => {
+    const commissionRate = parseCommissionRate(request.body?.commissionRate);
+    if (commissionRate === null) {
+      throw new HttpError(400, "commissionRate must be at least 0 and below 1, with at most four decimal places");
+    }
+    const rate = await updatePlatformCommissionRate(commissionRate, request.auth!.accountId);
+    response.json({ data: { commissionRate: rate } });
+  }),
+);
+
+adminRouter.post(
+  "/broadcast",
+  asyncHandler(async (request, response) => {
+    const title = typeof request.body?.title === "string" ? request.body.title.trim() : "";
+    const body = typeof request.body?.body === "string" ? request.body.body.trim() : "";
+    if (!title) throw new HttpError(400, "A message title is required");
+    if (!body) throw new HttpError(400, "A message body is required");
+    if (title.length > 256) throw new HttpError(400, "The message title cannot exceed 256 characters");
+    if (body.length > 4096) throw new HttpError(400, "The message body cannot exceed 4096 characters");
+    const data = await sendBroadcastNotification(title, body);
+    await recordAuditLog({
+      adminId: request.auth!.accountId,
+      action: "BROADCAST_SENT",
+      targetType: "PLATFORM",
+      targetId: "all",
+      metadata: { title, body, ...data },
+    });
+    response.json({ data });
   }),
 );
 

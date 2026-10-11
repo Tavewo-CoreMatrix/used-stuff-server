@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { TransactionStatus, ListingStatus } from "@prisma/client";
-import { openDispute, resolveDispute, updateTransactionStatus } from "../../src/services/transactions.service.js";
+import { createTransaction, openDispute, resolveDispute, updateTransactionStatus } from "../../src/services/transactions.service.js";
 import { prisma } from "../setup.js";
 import * as refundsService from "../../src/services/refunds.service.js";
 import * as queues from "../../src/queues/index.js";
@@ -11,6 +11,7 @@ vi.mock("../../src/services/refunds.service.js", () => ({
 
 // Schedule helpers hit real Redis via BullMQ; stub them so tests stay hermetic.
 vi.mock("../../src/queues/index.js", () => ({
+  schedulePendingExpiry: vi.fn().mockResolvedValue(undefined),
   scheduleEscrowTimeout: vi.fn().mockResolvedValue(undefined),
   scheduleInspectionDeadline: vi.fn().mockResolvedValue(undefined),
   scheduleSellerPayout: vi.fn().mockResolvedValue(undefined),
@@ -25,6 +26,43 @@ vi.mock("../../src/services/notifications.service.js", () => ({
 describe("transactions.service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  describe("createTransaction", () => {
+    it("snapshots the configured commission rate and fee on new orders", async () => {
+      const tx = {
+        listing: {
+          findUnique: vi.fn().mockResolvedValue({
+            id: "listing-1",
+            status: ListingStatus.ACTIVE,
+            sellerId: "seller-1",
+            price: 1200,
+            currency: "NGN",
+            quantityAvailable: 2,
+          }),
+          updateMany: vi.fn().mockResolvedValue({ count: 1 }),
+        },
+        platformSetting: {
+          findUniqueOrThrow: vi.fn().mockResolvedValue({ commissionRate: 0.0875 }),
+        },
+        transaction: {
+          create: vi.fn().mockResolvedValue({ id: "transaction-1" }),
+        },
+      };
+      prisma.account.findUnique.mockResolvedValue({ id: "buyer-1" } as any);
+      prisma.$transaction.mockImplementation(async (callback: any) => callback(tx));
+      prisma.transaction.findUniqueOrThrow.mockResolvedValue({ id: "transaction-1" } as any);
+
+      await createTransaction({ listingId: "listing-1", buyerId: "buyer-1", quantity: 2 });
+
+      expect(tx.transaction.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          amount: 2400,
+          platformFeeRate: 0.0875,
+          platformFeeAmount: 210,
+        }),
+      }));
+    });
   });
 
   describe("updateTransactionStatus", () => {

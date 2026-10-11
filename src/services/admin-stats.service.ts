@@ -1,6 +1,6 @@
 import { AccountStatus, ListingStatus, TransactionStatus } from "@prisma/client";
 import { prisma } from "../db/prisma.js";
-import { PLATFORM_FEE_RATE } from "./payouts.service.js";
+import { getPlatformCommissionRate } from "./platform-settings.service.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const STUCK_AFTER_DAYS = 3;
@@ -19,18 +19,18 @@ export const getAdminStats = async () => {
   const weekAgo = new Date(now.getTime() - 7 * DAY_MS);
   const stuckBefore = new Date(now.getTime() - STUCK_AFTER_DAYS * DAY_MS);
 
-  const [escrow, openDisputes, monthPayouts, allPayouts, activeListings, newAccounts, stuckOrders, failedPayouts] =
+  const [escrow, openDisputes, monthPayouts, allPayouts, activeListings, newAccounts, stuckOrders, failedPayouts, commissionRate] =
     await Promise.all([
       prisma.transaction.aggregate({ where: { status: { in: IN_ESCROW } }, _sum: { amount: true } }),
       prisma.transaction.count({ where: { status: TransactionStatus.DISPUTED } }),
       prisma.transaction.aggregate({
         where: { status: TransactionStatus.PAYOUT_RELEASED, payoutReleasedAt: { gte: monthStart } },
-        _sum: { amount: true },
+        _sum: { amount: true, platformFeeAmount: true },
         _count: true,
       }),
       prisma.transaction.aggregate({
         where: { status: TransactionStatus.PAYOUT_RELEASED },
-        _sum: { amount: true },
+        _sum: { amount: true, platformFeeAmount: true },
       }),
       prisma.listing.count({ where: { status: ListingStatus.ACTIVE } }),
       prisma.account.count({ where: { createdAt: { gte: weekAgo }, status: { not: AccountStatus.DELETED } } }),
@@ -44,6 +44,7 @@ export const getAdminStats = async () => {
       prisma.transaction.count({
         where: { payoutFailedAt: { not: null }, payoutSettledAt: null },
       }),
+      getPlatformCommissionRate(),
     ]);
 
   const monthGross = Number(monthPayouts._sum.amount ?? 0);
@@ -56,10 +57,10 @@ export const getAdminStats = async () => {
     activeListings,
     newAccountsThisWeek: newAccounts,
     grossVolumeThisMonth: monthGross,
-    commissionThisMonth: Math.round(monthGross * PLATFORM_FEE_RATE * 100) / 100,
-    commissionLifetime: Math.round(lifetimeGross * PLATFORM_FEE_RATE * 100) / 100,
+    commissionThisMonth: Number(monthPayouts._sum.platformFeeAmount ?? 0),
+    commissionLifetime: Number(allPayouts._sum.platformFeeAmount ?? 0),
     stuckOrders,
     failedPayouts,
-    commissionRate: PLATFORM_FEE_RATE,
+    commissionRate,
   };
 };
