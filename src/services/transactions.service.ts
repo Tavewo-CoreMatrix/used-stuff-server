@@ -70,7 +70,11 @@ export const createTransaction = async (input: CreateTransactionInput) => {
     // Atomic guard: only decrements if stock hasn't changed since we read it above,
     // so two buyers racing for the last unit(s) can't both succeed.
     const claimed = await tx.listing.updateMany({
-      where: { id: listing.id, quantityAvailable: { gte: quantity } },
+      where: {
+        id: listing.id,
+        status: ListingStatus.ACTIVE,
+        quantityAvailable: { gte: quantity },
+      },
       data: {
         quantityAvailable: { decrement: quantity },
         status: remaining === 0 ? ListingStatus.RESERVED : undefined,

@@ -5,6 +5,7 @@ import {
   getListingHandler,
   listListingsHandler,
   listMyListingsHandler,
+  reportListingAvailabilityHandler,
   updateListingHandler,
 } from "../controllers/listings.controller.js";
 import { requireAuth } from "../middleware/auth.middleware.js";
@@ -16,4 +17,5 @@ listingsRouter.get("/mine", requireAuth, listMyListingsHandler);
 listingsRouter.post("/", requireAuth, createListingHandler);
 listingsRouter.get("/:listingId", getListingHandler);
 listingsRouter.patch("/:listingId", requireAuth, updateListingHandler);
+listingsRouter.post("/:listingId/availability", requireAuth, reportListingAvailabilityHandler);
 listingsRouter.delete("/:listingId", requireAuth, deleteListingHandler);

@@ -12,6 +12,7 @@ import { asyncHandler } from "../utils/async-handler.js";
 import { HttpError } from "../utils/http-error.js";
 import { redactSellerForViewer } from "../utils/public-seller.js";
 import { matchWantedRequests } from "../services/wanted-requests.service.js";
+import { reportListingAvailability } from "../services/listing-availability.service.js";
 import {
   readOptionalBoolean,
   readOptionalPositiveInteger,
@@ -124,6 +125,21 @@ export const updateListingHandler: RequestHandler = asyncHandler(async (request,
   });
 
   triggerWantedMatch(listing);
+  response.json({ data: listing });
+});
+
+export const reportListingAvailabilityHandler: RequestHandler = asyncHandler(async (request, response) => {
+  const auth = requireAuth(request);
+  if (typeof request.body.available !== "boolean") {
+    throw new HttpError(400, "available must be a boolean");
+  }
+
+  const listing = await reportListingAvailability(
+    readRouteParam(request.params.listingId, "listingId"),
+    auth.accountId,
+    request.body.available,
+  );
+
   response.json({ data: listing });
 });
 

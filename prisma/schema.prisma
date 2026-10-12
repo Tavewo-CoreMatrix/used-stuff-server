@@ -143,6 +143,8 @@ model Listing {
   // Set when an admin takes the listing down; blocks the seller (and order cancellations) from reactivating it.
   removedByAdminAt  DateTime?
   removalReason     String?
+  lastAvailabilityConfirmedAt DateTime?
+  lastAvailabilityReminderAt DateTime?
   seller            Account       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
   item              Item          @relation(fields: [itemId], references: [id], onDelete: Cascade)
   transactions      Transaction[]
@@ -152,6 +154,8 @@ model Listing {
   @@index([sellerId])
   @@index([itemId])
   @@index([status])
+  @@index([status, lastAvailabilityConfirmedAt])
+  @@index([status, lastAvailabilityReminderAt])
 }
 
 model Transaction {

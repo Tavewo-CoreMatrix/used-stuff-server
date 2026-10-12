@@ -9,27 +9,69 @@ type PushMessage = {
   sound?: "default";
 };
 
-const sendPush = async (messages: PushMessage[]): Promise<void> => {
-  const valid = messages.filter((m) => m.to.startsWith("ExponentPushToken["));
-  if (valid.length === 0) return;
+const sendPush = async (messages: PushMessage[]): Promise<boolean[]> => {
+  const accepted = messages.map(() => false);
+  const valid = messages
+    .map((message, index) => ({ message, index }))
+    .filter(({ message }) => message.to.startsWith("ExponentPushToken["));
 
-  try {
-    const response = await fetch("https://exp.host/--/api/v2/push/send", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        "Accept-Encoding": "gzip, deflate",
-      },
-      body: JSON.stringify(valid),
-    });
+  for (let start = 0; start < valid.length; start += 100) {
+    const batch = valid.slice(start, start + 100);
+    try {
+      const response = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "Accept-Encoding": "gzip, deflate",
+        },
+        body: JSON.stringify(batch.map(({ message }) => message)),
+        signal: AbortSignal.timeout(15_000),
+      });
 
-    if (!response.ok) {
-      console.error("[Notifications] Expo push API error:", response.status, await response.text());
+      if (!response.ok) {
+        console.error("[Notifications] Expo push API error:", response.status, await response.text());
+        continue;
+      }
+
+      const payload: unknown = await response.json();
+      if (
+        typeof payload !== "object" ||
+        payload === null ||
+        !("data" in payload) ||
+        !Array.isArray(payload.data) ||
+        payload.data.length !== batch.length
+      ) {
+        console.error("[Notifications] Expo push API returned an invalid response");
+        continue;
+      }
+
+      payload.data.forEach((ticket, index) => {
+        accepted[batch[index].index] =
+          typeof ticket === "object" && ticket !== null && "status" in ticket && ticket.status === "ok";
+      });
+    } catch (err) {
+      console.error("[Notifications] Failed to send push:", err);
     }
-  } catch (err) {
-    console.error("[Notifications] Failed to send push:", err);
   }
+
+  return accepted;
+};
+
+export const notifyListingAvailabilityReminders = async (
+  reminders: Array<{ listingId: string; itemTitle: string; pushToken: string }>,
+): Promise<string[]> => {
+  const accepted = await sendPush(
+    reminders.map(({ listingId, itemTitle, pushToken }) => ({
+      to: pushToken,
+      sound: "default",
+      title: "Is your item still available?",
+      body: `Please confirm whether "${itemTitle}" is still available for sale.`,
+      data: { listingId, screen: "listing-availability" },
+    })),
+  );
+
+  return reminders.filter((_, index) => accepted[index]).map(({ listingId }) => listingId);
 };
 
 const templates: Partial<

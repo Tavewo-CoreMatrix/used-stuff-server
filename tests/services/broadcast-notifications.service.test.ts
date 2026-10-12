@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { sendBroadcastNotification } from "../../src/services/notifications.service.js";
+import {
+  notifyListingAvailabilityReminders,
+  sendBroadcastNotification,
+} from "../../src/services/notifications.service.js";
 import { prisma } from "../setup.js";
 
 describe("sendBroadcastNotification", () => {
@@ -29,6 +32,28 @@ describe("sendBroadcastNotification", () => {
       rejected: 0,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends an actionable weekly listing availability reminder", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const messages = JSON.parse(String(init?.body)) as Array<Record<string, unknown>>;
+      expect(messages).toEqual([
+        expect.objectContaining({
+          to: "ExponentPushToken[seller]",
+          title: "Is your item still available?",
+          body: 'Please confirm whether "Desk" is still available for sale.',
+          data: { listingId: "listing-1", screen: "listing-availability" },
+        }),
+      ]);
+      return { ok: true, json: async () => ({ data: [{ status: "ok" }] }) } as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      notifyListingAvailabilityReminders([
+        { listingId: "listing-1", itemTitle: "Desk", pushToken: "ExponentPushToken[seller]" },
+      ]),
+    ).resolves.toEqual(["listing-1"]);
   });
 
   it("sends a token shared by several accounts only once", async () => {
