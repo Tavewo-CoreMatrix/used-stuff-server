@@ -18,11 +18,12 @@ describe("listing availability checks", () => {
     notificationMocks.notifyListingAvailabilityReminders.mockResolvedValue([]);
   });
 
-  it("records seller confirmation without changing an active listing", async () => {
+  it("records the seller's remaining quantity and keeps the listing active", async () => {
     prisma.listing.findUnique.mockResolvedValue({
       id: "listing-1",
       sellerId: "seller-1",
       status: ListingStatus.ACTIVE,
+      quantity: 1,
       quantityAvailable: 1,
       removedByAdminAt: null,
       removalReason: null,
@@ -30,7 +31,7 @@ describe("listing availability checks", () => {
     prisma.listing.updateMany.mockResolvedValue({ count: 1 } as never);
     prisma.listing.findUniqueOrThrow.mockResolvedValue({ id: "listing-1", status: ListingStatus.ACTIVE } as never);
 
-    await expect(reportListingAvailability("listing-1", "seller-1", true)).resolves.toMatchObject({
+    await expect(reportListingAvailability("listing-1", "seller-1", 1)).resolves.toMatchObject({
       id: "listing-1",
       status: ListingStatus.ACTIVE,
     });
@@ -40,10 +41,13 @@ describe("listing availability checks", () => {
         id: "listing-1",
         sellerId: "seller-1",
         status: ListingStatus.ACTIVE,
-        quantityAvailable: { gt: 0 },
+        quantityAvailable: 1,
         removedByAdminAt: null,
       },
       data: {
+        quantity: 1,
+        quantityAvailable: 1,
+        status: ListingStatus.ACTIVE,
         lastAvailabilityConfirmedAt: expect.any(Date),
         lastAvailabilityReminderAt: null,
       },
@@ -51,11 +55,48 @@ describe("listing availability checks", () => {
     expect(prisma.transaction.findFirst).not.toHaveBeenCalled();
   });
 
-  it("marks an externally sold item sold only when there is no open order", async () => {
+  it("updates the total and available quantities for a partial external sale", async () => {
     prisma.listing.findUnique.mockResolvedValue({
       id: "listing-1",
       sellerId: "seller-1",
       status: ListingStatus.ACTIVE,
+      quantity: 5,
+      quantityAvailable: 3,
+      removedByAdminAt: null,
+      removalReason: null,
+    } as never);
+    prisma.listing.updateMany.mockResolvedValue({ count: 1 } as never);
+    prisma.listing.findUniqueOrThrow.mockResolvedValue({
+      id: "listing-1",
+      quantity: 4,
+      quantityAvailable: 2,
+      status: ListingStatus.ACTIVE,
+    } as never);
+
+    await expect(reportListingAvailability("listing-1", "seller-1", 2)).resolves.toMatchObject({
+      quantity: 4,
+      quantityAvailable: 2,
+      status: ListingStatus.ACTIVE,
+    });
+    expect(prisma.listing.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          quantity: 4,
+          status: ListingStatus.ACTIVE,
+          quantityAvailable: 2,
+          lastAvailabilityConfirmedAt: expect.any(Date),
+        }),
+      }),
+    );
+    expect(prisma.transaction.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("marks the listing sold when no stock remains and there are no open orders", async () => {
+    prisma.listing.findUnique.mockResolvedValue({
+      id: "listing-1",
+      sellerId: "seller-1",
+      status: ListingStatus.ACTIVE,
+      quantity: 1,
       quantityAvailable: 1,
       removedByAdminAt: null,
       removalReason: null,
@@ -64,15 +105,15 @@ describe("listing availability checks", () => {
     prisma.listing.updateMany.mockResolvedValue({ count: 1 } as never);
     prisma.listing.findUniqueOrThrow.mockResolvedValue({ id: "listing-1", status: ListingStatus.SOLD } as never);
 
-    await expect(reportListingAvailability("listing-1", "seller-1", false)).resolves.toMatchObject({
+    await expect(reportListingAvailability("listing-1", "seller-1", 0)).resolves.toMatchObject({
       status: ListingStatus.SOLD,
     });
     expect(prisma.listing.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           status: ListingStatus.SOLD,
+          quantity: 0,
           quantityAvailable: 0,
-          lastAvailabilityConfirmedAt: expect.any(Date),
         }),
       }),
     );
@@ -83,15 +124,34 @@ describe("listing availability checks", () => {
       id: "listing-1",
       sellerId: "seller-1",
       status: ListingStatus.ACTIVE,
+      quantity: 1,
       quantityAvailable: 1,
       removedByAdminAt: null,
       removalReason: null,
     } as never);
     prisma.transaction.findFirst.mockResolvedValue({ id: "order-1" } as never);
 
-    await expect(reportListingAvailability("listing-1", "seller-1", false)).rejects.toMatchObject({
+    await expect(reportListingAvailability("listing-1", "seller-1", 0)).rejects.toMatchObject({
       statusCode: 409,
       message: expect.stringContaining("order in progress"),
+    });
+    expect(prisma.listing.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("rejects an external stock report above the current available stock", async () => {
+    prisma.listing.findUnique.mockResolvedValue({
+      id: "listing-1",
+      sellerId: "seller-1",
+      status: ListingStatus.ACTIVE,
+      quantity: 4,
+      quantityAvailable: 2,
+      removedByAdminAt: null,
+      removalReason: null,
+    } as never);
+
+    await expect(reportListingAvailability("listing-1", "seller-1", 3)).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining("cannot exceed"),
     });
     expect(prisma.listing.updateMany).not.toHaveBeenCalled();
   });

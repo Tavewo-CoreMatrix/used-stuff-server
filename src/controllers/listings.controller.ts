@@ -130,14 +130,15 @@ export const updateListingHandler: RequestHandler = asyncHandler(async (request,
 
 export const reportListingAvailabilityHandler: RequestHandler = asyncHandler(async (request, response) => {
   const auth = requireAuth(request);
-  if (typeof request.body.available !== "boolean") {
-    throw new HttpError(400, "available must be a boolean");
+  const remainingQuantity = request.body.remainingQuantity;
+  if (typeof remainingQuantity !== "number" || !Number.isInteger(remainingQuantity) || remainingQuantity < 0) {
+    throw new HttpError(400, "remainingQuantity must be a non-negative whole number");
   }
 
   const listing = await reportListingAvailability(
     readRouteParam(request.params.listingId, "listingId"),
     auth.accountId,
-    request.body.available,
+    remainingQuantity,
   );
 
   response.json({ data: listing });

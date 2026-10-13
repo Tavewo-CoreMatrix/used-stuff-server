@@ -8,7 +8,7 @@ const REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 export const reportListingAvailability = async (
   listingId: string,
   sellerId: string,
-  available: boolean,
+  remainingQuantity: number,
 ) => {
   const listing = await prisma.listing.findUnique({
     where: { id: listingId },
@@ -16,6 +16,7 @@ export const reportListingAvailability = async (
       id: true,
       sellerId: true,
       status: true,
+      quantity: true,
       quantityAvailable: true,
       removedByAdminAt: true,
       removalReason: true,
@@ -38,7 +39,17 @@ export const reportListingAvailability = async (
     throw new HttpError(409, "Only active listings with available stock can be confirmed");
   }
 
-  if (!available) {
+  if (!Number.isInteger(remainingQuantity) || remainingQuantity < 0) {
+    throw new HttpError(400, "remainingQuantity must be a non-negative whole number");
+  }
+  if (remainingQuantity > listing.quantityAvailable) {
+    throw new HttpError(
+      400,
+      `remainingQuantity cannot exceed the ${listing.quantityAvailable} unit(s) currently available`,
+    );
+  }
+
+  if (remainingQuantity === 0) {
     const openTransaction = await prisma.transaction.findFirst({
       where: {
         listingId,
@@ -68,15 +79,15 @@ export const reportListingAvailability = async (
       id: listingId,
       sellerId,
       status: ListingStatus.ACTIVE,
-      quantityAvailable: { gt: 0 },
+      quantityAvailable: listing.quantityAvailable,
       removedByAdminAt: null,
     },
     data: {
+      quantity: listing.quantity - listing.quantityAvailable + remainingQuantity,
+      quantityAvailable: remainingQuantity,
+      status: remainingQuantity === 0 ? ListingStatus.SOLD : ListingStatus.ACTIVE,
       lastAvailabilityConfirmedAt: now,
       lastAvailabilityReminderAt: null,
-      ...(available
-        ? {}
-        : { status: ListingStatus.SOLD, quantityAvailable: 0 }),
     },
   });
 
